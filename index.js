@@ -1,41 +1,48 @@
-require('dotenv').config();
+require("dotenv").config();
 
-const { getCryptoPriceInUSD, generateCryptoChart } = require('./modules/price');
+const { getCryptoPriceInUSD, generateCryptoChart } = require("./modules/price");
 
-const { Telegraf } = require('telegraf');
+const { Telegraf } = require("telegraf");
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_API);
+let cryptoSymbol = "bitcoin";
 
-bot.on('message', async (ctx) => {
-	try {
-		const { message_id, from, chat, date, text } = ctx.message;
+bot.on("message", async (ctx) => {
+  try {
+    const { message_id, from, chat, date, text } = ctx.message;
 
-		console.log('@' + (from.username || 'X') + ' - ' + chat.id + ' - ' + text);
+    console.log("@" + (from.username || "X") + " - " + chat.id + " - " + text);
 
-		if (text.startsWith('/')) {
-			const [command, ...args] = text.split(' ');
+    if (text.startsWith("/")) {
+      const [command, ...args] = text.split(" ");
 
-			if (command === '/start') {
-				ctx.reply(`Hello ${from.first_name}!`);
-			}
+      if (command === "/start") {
+        ctx.reply(`Hello ${from.first_name}!`);
+      }
 
-			if (command === '/price') {
-				const cryptoSymbol = args[0].toLowerCase();
-				const price = await getCryptoPriceInUSD(cryptoSymbol);
+      if (command === "/price") {
+        if (args[0]) {
+          cryptoSymbol = args[0].toLowerCase() || cryptoSymbol;
+        }
 
-				ctx.reply(`1 ${cryptoSymbol.toUpperCase()} = USD: $${price}`);
-			}
+        const price = await getCryptoPriceInUSD(cryptoSymbol);
 
-			if (command === '/chart') {
-				const cryptoSymbol = args[0].toLowerCase();
-				const imageBuffer = await generateCryptoChart(cryptoSymbol);
+        ctx.reply(`${cryptoSymbol} is $${price} USD`);
+      }
 
-				ctx.replyWithPhoto({ source: imageBuffer });
-			}
-		}
-	} catch (error) {
-		console.log(error);
-	}
+      if (command === "/chart") {
+        if (args[0]) {
+          cryptoSymbol = args[0].toLowerCase() || cryptoSymbol;
+        }
+
+        const imageBuffer = await generateCryptoChart(cryptoSymbol);
+
+        ctx.replyWithPhoto({ source: imageBuffer });
+      }
+    }
+  } catch (error) {
+    console.log(error);
+  }
 });
 
 bot.launch();
