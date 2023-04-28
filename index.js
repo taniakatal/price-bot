@@ -22,11 +22,14 @@ const alertSchema = new mongoose.Schema({
 
 const Alert = mongoose.model("Alert", alertSchema);
 
-const priceSchema = new mongoose.Schema({
-  chatId: Number,
-  symbol: String,
-  lastPrice: Number,
-});
+const priceSchema = new mongoose.Schema(
+  {
+    chatId: Number,
+    symbol: String,
+    lastPrice: Number,
+  },
+  { timestamps: { createdAt: "createdAt" }, expireAfterSeconds: 24 * 60 * 60 }
+);
 
 const Price = mongoose.model("Price", priceSchema);
 
@@ -44,14 +47,19 @@ async function getPriceChange(chatId, symbol, currentPrice) {
         ? `+${priceChangePercent.toFixed(2)}%`
         : `${priceChangePercent.toFixed(2)}%`;
 
-    return `
-    Price change since last check: ${priceChangeText} USD (${priceChangePercentText})`;
+    if (priceChangeText > 0) {
+      return `Price change since last check: ${priceChangeText} USD (${priceChangePercentText})`;
+    } else {
+      return "";
+    }
   } else {
     return "";
   }
 }
 
 async function checkAlerts() {
+  console.log("Running Check ALerts ");
+
   const symbols = await Alert.distinct("symbol");
 
   for (const symbol of symbols) {
@@ -80,14 +88,14 @@ async function checkAlerts() {
     }
 
     const priceData = await Price.findOneAndUpdate(
-      { chatId: alert.chatId, symbol },
+      { chatId: chatId },
       { lastPrice: currentPrice },
       { upsert: true, new: true }
     );
 
     if (priceData) {
       const priceChangeText = await getPriceChange(
-        alert.chatId,
+        chatId,
         symbol,
         currentPrice
       );
@@ -95,14 +103,15 @@ async function checkAlerts() {
       if (priceChangeText) {
         bot.telegram.sendMessage(
           alert.chatId,
-          `${symbol.toUpperCase()} is $${currentPrice} USD. ${priceChangeText}`
+          `${symbol.toUpperCase()} is $${currentPrice} USD. 
+          ${priceChangeText}`
         );
       }
     }
   }
 }
 
-setInterval(checkAlerts, 60000);
+setInterval(checkAlerts, 33 * 1000);
 
 bot.on("message", async (ctx) => {
   const { message_id, from, chat, date, text } = ctx.message;
