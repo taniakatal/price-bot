@@ -47,7 +47,15 @@ bot.on('message', async (ctx) => {
 			const [command, ...args] = text.split(' ');
 
 			if (command === '/start') {
-				ctx.reply(`Hello ${from.first_name}!`);
+				const welcomeMessage = `Hello ${from.first_name}! Here are the available commands:
+
+/price [SYMBOL] - Get the current price of the specified cryptocurrency in USD.
+/chart [SYMBOL] - Get a chart of the specified cryptocurrency's price history.
+/alert SYMBOL PRICE - Set a price alert for the specified cryptocurrency when it reaches or falls below the given price in USD.
+/viewalerts - View all your active price alerts.
+
+Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for Ethereum. If no symbol is provided, the default is Bitcoin.`;
+				ctx.reply(welcomeMessage);
 			}
 
 			if (command === '/price') {
@@ -81,6 +89,35 @@ bot.on('message', async (ctx) => {
 					ctx.reply(`Price alert set for ${symbol.toUpperCase()} at $${price} USD`);
 				} else {
 					ctx.reply('Please use the following format: /alert SYMBOL PRICE');
+				}
+			}
+			if (command === '/viewalerts') {
+				const alerts = await Alert.find({ chatId: chat.id });
+
+				if (alerts.length > 0) {
+					let alertMessage = 'Your active alerts:\n\n';
+					alerts.forEach((alert) => {
+						alertMessage += `ID: ${alert._id} 🔔 ${alert.symbol.toUpperCase()} at $${alert.price} USD\n`;
+					});
+					ctx.reply(alertMessage);
+				} else {
+					ctx.reply('You have no active alerts.');
+				}
+			}
+
+			if (command === '/cancelalert') {
+				if (args[0]) {
+					const alertId = args[0];
+					const alert = await Alert.findOne({ _id: alertId, chatId: chat.id });
+
+					if (alert) {
+						await Alert.deleteOne({ _id: alertId });
+						ctx.reply(`Alert for ${alert.symbol.toUpperCase()} at $${alert.price} USD has been cancelled.`);
+					} else {
+						ctx.reply('Invalid alert ID or the alert does not belong to this chat.');
+					}
+				} else {
+					ctx.reply('Please use the following format: /cancelalert ALERT_ID');
 				}
 			}
 		}
