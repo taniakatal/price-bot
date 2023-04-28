@@ -14,26 +14,32 @@ mongoose.connect(process.env.MONGODB_URI, {
 });
 
 const alertSchema = new mongoose.Schema({
-	symbol: String,
-	price: Number,
-	chatId: Number,
+  symbol: String,
+  price: Number,
+  type: { type: String, enum: ['above', 'below'] },
+  chatId: Number,
 });
 
 const Alert = mongoose.model('Alert', alertSchema);
 
+
+
 async function checkAlerts() {
-	const symbols = await Alert.distinct('symbol');
-
-	for (const symbol of symbols) {
-		const currentPrice = await getCryptoPriceInUSD(symbol);
-		const alerts = await Alert.find({ symbol, price: { $lte: currentPrice } });
-
-		for (const alert of alerts) {
-			bot.telegram.sendMessage(alert.chatId, `🚨 ${symbol.toUpperCase()} reached your price alert of $${alert.price} USD. Current price: $${currentPrice} USD`);
-			await Alert.deleteOne({ _id: alert._id });
-		}
-	}
+  const symbols = await Alert.distinct('symbol');
+  
+  for (const symbol of symbols) {
+    const currentPrice = await getCryptoPriceInUSD(symbol);
+    const alertsAbove = await Alert.find({ symbol, type: 'above', price: { $lte: currentPrice } });
+    const alertsBelow = await Alert.find({ symbol, type: 'below', price: { $gte: currentPrice } });
+    
+    for (const alert of [...alertsAbove, ...alertsBelow]) {
+      const typeText = alert.type === 'above' ? 'reached or exceeded' : 'fell or reached';
+      bot.telegram.sendMessage(alert.chatId, `🚨 ${symbol.toUpperCase()} ${typeText} your price alert of $${alert.price} USD. Current price: $${currentPrice} USD`);
+      await Alert.deleteOne({ _id: alert._id });
+    }
+  }
 }
+
 
 setInterval(checkAlerts, 60000);
 
@@ -78,19 +84,23 @@ Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for
 				ctx.replyWithPhoto({ source: imageBuffer });
 			}
 
-			if (command === '/alert') {
-				if (args.length >= 2) {
-					const symbol = args[0].toLowerCase();
-					const price = parseFloat(args[1]);
+if (command === '/alert') {
+  if (args.length >= 3) {
+    const symbol = args[0].toLowerCase();
+    const price = parseFloat(args[1]);
+    const type = args[2].toLowerCase() === 'above' ? 'above' : 'below';
+    
+    const alert = new Alert({ symbol, price, type, chatId: chat.id });
+    await alert.save();
+    
+    ctx.reply(`Price alert set for ${symbol.toUpperCase()} ${type === 'above' ? 'above' : 'below'} $${price} USD`);
+  } else {
+    ctx.reply('Please use the following format: /alert SYMBOL PRICE ABOVE/BELOW');
+  }
+}
 
-					const alert = new Alert({ symbol, price, chatId: chat.id });
-					await alert.save();
 
-					ctx.reply(`Price alert set for ${symbol.toUpperCase()} at $${price} USD`);
-				} else {
-					ctx.reply('Please use the following format: /alert SYMBOL PRICE');
-				}
-			}
+
 			if (command === '/viewalerts') {
 				const alerts = await Alert.find({ chatId: chat.id });
 
