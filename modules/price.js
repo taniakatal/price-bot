@@ -74,7 +74,6 @@ async function generateCryptoChart(cryptoSymbol) {
   return imageBuffer;
 }
 
-// Function to fetch cryptocurrency information from CoinGecko API
 function getCryptocurrencyInfo(coinId) {
   return new Promise(async (resolve, reject) => {
     try {
