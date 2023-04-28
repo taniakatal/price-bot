@@ -2,6 +2,34 @@ const axios = require("axios");
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 const canvas = new ChartJSNodeCanvas({ width: 1000, height: 1000 });
 
+
+async function fetchTopLosersAndGainers() {
+  try {
+    const response = await axios.get(
+      "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=10&page=1&sparkline=false&price_change_percentage=24h"
+    );
+    const data = response.data;
+
+    console.log(data);
+    
+    const topGainers = data.filter(coin => coin.price_change_percentage_24h > 0)
+                           .sort((a, b) => b.price_change_percentage_24h - a.price_change_percentage_24h);
+    
+    const topLosers = data.filter(coin => coin.price_change_percentage_24h < 0)
+                          .sort((a, b) => a.price_change_percentage_24h - b.price_change_percentage_24h);
+    
+    return {
+      topGainers,
+      topLosers
+    };
+  } catch (error) {
+    console.error("Failed to fetch top losers and gainers:", error);
+    return null;
+  }
+}
+
+
+
 function getCryptoPriceInUSD(cryptoSymbol) {
   return axios
     .get(
@@ -102,3 +130,5 @@ exports.getCryptocurrencyInfo = getCryptocurrencyInfo;
 exports.generateCryptoChart = generateCryptoChart;
 
 exports.getCryptoPriceInUSD = getCryptoPriceInUSD;
+
+exports.fetchTopLosersAndGainers = fetchTopLosersAndGainers;
