@@ -47,7 +47,7 @@ async function getPriceChange(chatId, symbol, currentPrice) {
         ? `+${priceChangePercent.toFixed(2)}%`
         : `${priceChangePercent.toFixed(2)}%`;
 
-    if (priceChangeText > 0) {
+    if (priceChangeText) {
       return `Price change since last check: ${priceChangeText} USD (${priceChangePercentText})`;
     } else {
       return "";
