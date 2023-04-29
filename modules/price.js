@@ -30,13 +30,13 @@ async function fetchTopLosersAndGainers() {
 
 
 
-function getCryptoPriceInUSD(cryptoSymbol) {
+function getPrice(cryptocSymbol) {
   return axios
     .get(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoSymbol}&vs_currencies=usd`
+      `https://api.coingecko.com/api/v3/simple/price?ids=${cryptocSymbol}&vs_currencies=usd`
     )
     .then((response) => {
-      const price = response.data[cryptoSymbol].usd;
+      const price = response.data[cryptocSymbol].usd;
 
       return price;
     })
@@ -44,6 +44,9 @@ function getCryptoPriceInUSD(cryptoSymbol) {
       console.log(`Error fetching price data: ${error}`);
     });
 }
+
+
+
 
 async function generateCryptoChart(cryptoSymbol) {
   const response = await axios.get(
@@ -128,6 +131,9 @@ exports.getCryptocurrencyInfo = getCryptocurrencyInfo;
 
 exports.generateCryptoChart = generateCryptoChart;
 
-exports.getCryptoPriceInUSD = getCryptoPriceInUSD;
+exports.getPrice= getPrice;
+
+exports.fetchTopLosersAndGainers= fetchTopLosersAndGainers;
+
 
 exports.fetchTopLosersAndGainers = fetchTopLosersAndGainers;

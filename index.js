@@ -1,17 +1,31 @@
 require("dotenv").config();
 
-const { getCryptoPriceInUSD, generateCryptoChart } = require("./modules/price");
+const {
+  getPrice,
+  generateCryptoChart,fetchTopLosersAndGainers
+} = require("./modules/price");
 
 const { Telegraf } = require("telegraf");
 const mongoose = require("mongoose");
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_API);
-let cryptoSymbol = "bitcoin";
+let cryptoSymbol= "bitcoin";
 
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 });
+
+
+
+const cryptoSchema = new mongoose.Schema({
+  cryptoSymbol: String,
+  price: Number,
+  timestamp: Date
+});
+
+const Crypto = mongoose.model('Crypto', cryptoSchema);
+
 
 const alertSchema = new mongoose.Schema({
   symbol: String,
@@ -26,7 +40,7 @@ async function checkAlerts() {
   const symbols = await Alert.distinct("symbol");
 
   for (const symbol of symbols) {
-    const currentPrice = await getCryptoPriceInUSD(symbol);
+    const currentPrice = await getPrice(symbol);
     const alertsAbove = await Alert.find({
       symbol,
       type: "above",
@@ -78,12 +92,52 @@ Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for
           cryptoSymbol = args[0].toLowerCase() || cryptoSymbol;
         }
 
-        const price = await getCryptoPriceInUSD(cryptoSymbol);
+        const price = await getPrice(cryptoSymbol);
+
+        // Save the cryptocurrency data to MongoDB
+  const crypto = new Crypto({
+    cryptoSymbol,
+    price,
+    timestamp: new Date()
+  });
+
+  await crypto.save();
 
         ctx.reply(`${cryptoSymbol} is $${price} USD`);
       }
 
-      if (command === "/chart") {
+      if(command==='/pricechange') {
+        const args = ctx.message.text.split(' ');
+        const cryptoSymbol = args[1];
+      
+        if (!cryptoSymbol) {
+          ctx.reply('Please specify a cryptocurrency symbol. Example usage: /pricechange BTC');
+          return;
+        }
+      
+        // Find the latest cryptocurrency data for the symbol in MongoDB
+        const latestCrypto = await Crypto.findOne({ cryptoSymbol }).sort('-timestamp');
+      
+        if (!latestCrypto) {
+          ctx.reply(`Sorry, could not find any data for ${cryptoSymbol}. Please try again later.`);
+          return;
+        }
+      
+        // Find the previous cryptocurrency data for the symbol in MongoDB
+        const previousCrypto = await Crypto.findOne({ cryptoSymbol, timestamp: { $lt: latestCrypto.timestamp } }).sort('-timestamp');
+      
+        if (!previousCrypto) {
+          ctx.reply(`Sorry, could not find any previous data for ${cryptoSymbol}. Please try again later.`);
+          return;
+        }
+
+        const priceChange = ((latestCrypto.price - previousCrypto.price) / previousCrypto.price) * 100;
+
+        ctx.reply(`The price of ${cryptoSymbol} has changed by ${priceChange.toFixed(2)}% from ${previousCrypto.price} to ${latestCrypto.price}.`);
+      }
+
+
+      if(command === "/chart") {
         if (args[0]) {
           cryptoSymbol = args[0].toLowerCase() || cryptoSymbol;
         }
@@ -92,6 +146,25 @@ Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for
 
         ctx.replyWithPhoto({ source: imageBuffer });
       }
+
+      if(command==="/fetchTop") {
+        try {
+          const { topGainers, topLosers } = await fetchTopLosersAndGainers();
+      
+          const outputMessage = `
+            <b>Top gainers:</b>
+            ${topGainers.map((coin) => `${coin.name} (${coin.symbol}): ${coin.price_change_percentage_24h}%`).join('\n')}
+            
+            <b>Top losers:</b>
+            ${topLosers.map((coin) => `${coin.name} (${coin.symbol}): ${coin.price_change_percentage_24h}%`).join('\n')}
+          `;
+      
+          ctx.replyWithHTML(outputMessage);
+        } catch (error) {
+          console.error("Failed to fetch top losers and gainers:", error);
+          ctx.reply('Sorry, I was unable to fetch the top losers and gainers.');
+        }
+      };
 
       if (command === "/alert") {
         if (args.length >= 3) {
@@ -105,7 +178,7 @@ Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for
           ctx.reply(
             `Price alert set for ${symbol.toUpperCase()} ${
               type === "above" ? "above" : "below"
-            } $${price} USD`
+            } ${price && !isNaN(price) ? `$${price} USD` : ""}`
           );
         } else {
           ctx.reply(
@@ -129,6 +202,8 @@ Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for
           ctx.reply("You have no active alerts.");
         }
       }
+
+      
 
       if (command === "/cancelalert") {
         if (args[0]) {
