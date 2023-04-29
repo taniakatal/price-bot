@@ -16,9 +16,22 @@ mongoose.connect(process.env.MONGODB_URI, {
   useUnifiedTopology: true,
 });
 
+const feedbackSchema = new mongoose.Schema({
+  chatId: { type: Number, required: true },
+  feedback: { type: String, required: true },
+  timestamp: { type: Date, default: Date.now }
+});
+const Feedback = mongoose.model('Feedback', feedbackSchema);
 
+
+const userSchema = new mongoose.Schema({
+  chatId: String
+});
+
+const User = mongoose.model('User', userSchema);
 
 const cryptoSchema = new mongoose.Schema({
+  chatId: String,
   cryptoSymbol: String,
   price: Number,
   timestamp: Date
@@ -78,6 +91,11 @@ bot.on("message", async (ctx) => {
       const [command, ...args] = text.split(" ");
 
       if (command === "/start") {
+
+        const user = new User({ chatId: ctx.chat.id });
+        await user.save();
+      
+
         const welcomeMessage = `Hello ${from.first_name}! Here are the available commands:
 /price [SYMBOL] - Get the current price of the specified cryptocurrency in USD.
 /chart [SYMBOL] - Get a chart of the specified cryptocurrency's price history.
@@ -87,55 +105,78 @@ Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for
         ctx.reply(welcomeMessage);
       }
 
-      if (command === "/price") {
-        if (args[0]) {
-          cryptoSymbol = args[0].toLowerCase() || cryptoSymbol;
-        }
+ 
 
-        const price = await getPrice(cryptoSymbol);
 
-        // Save the cryptocurrency data to MongoDB
-  const crypto = new Crypto({
-    cryptoSymbol,
-    price,
-    timestamp: new Date()
-  });
-
-  await crypto.save();
-
-        ctx.reply(`${cryptoSymbol} is $${price} USD`);
-      }
-
-      if(command==='/pricechange') {
-        const args = ctx.message.text.split(' ');
-        const cryptoSymbol = args[1];
-      
-        if (!cryptoSymbol) {
-          ctx.reply('Please specify a cryptocurrency symbol. Example usage: /pricechange BTC');
-          return;
-        }
-      
-        // Find the latest cryptocurrency data for the symbol in MongoDB
-        const latestCrypto = await Crypto.findOne({ cryptoSymbol }).sort('-timestamp');
-      
-        if (!latestCrypto) {
-          ctx.reply(`Sorry, could not find any data for ${cryptoSymbol}. Please try again later.`);
-          return;
-        }
-      
-        // Find the previous cryptocurrency data for the symbol in MongoDB
-        const previousCrypto = await Crypto.findOne({ cryptoSymbol, timestamp: { $lt: latestCrypto.timestamp } }).sort('-timestamp');
-      
-        if (!previousCrypto) {
-          ctx.reply(`Sorry, could not find any previous data for ${cryptoSymbol}. Please try again later.`);
-          return;
-        }
-
-        const priceChange = ((latestCrypto.price - previousCrypto.price) / previousCrypto.price) * 100;
-
-        ctx.reply(`The price of ${cryptoSymbol} has changed by ${priceChange.toFixed(2)}% from ${previousCrypto.price} to ${latestCrypto.price}.`);
-      }
-
+  if (command === "/price") {
+    if (args[0]) {
+      cryptoSymbol = args[0].toLowerCase() || cryptoSymbol;
+    }
+  
+    const price = await getPrice(cryptoSymbol);
+  
+    // Save the cryptocurrency data to MongoDB
+    const crypto = new Crypto({
+      chatId: ctx.chat.id, // Add the chat ID to the schema
+      cryptoSymbol,
+      price,
+      timestamp: new Date()
+    });
+  
+    await crypto.save();
+  
+    ctx.reply(`${cryptoSymbol} is $${price} USD`);
+  }
+  
+  if (command === "/pricechange") {
+    const args = ctx.message.text.split(" ");
+    const cryptoSymbol = args[1];
+  
+    if (!cryptoSymbol) {
+      ctx.reply(
+        "Please specify a cryptocurrency symbol. Example usage: /pricechange BTC"
+      );
+      return;
+    }
+  
+    // Find the latest cryptocurrency data for the symbol in MongoDB
+    const latestCrypto = await Crypto.findOne({ cryptoSymbol })
+      .sort("-timestamp")
+      .exec();
+  
+    if (!latestCrypto) {
+      ctx.reply(
+        `Sorry, could not find any data for ${cryptoSymbol}. Please try again later.`
+      );
+      return;
+    }
+  
+    // Find the previous cryptocurrency data for the symbol in MongoDB
+    const previousCrypto = await Crypto.findOne({
+      cryptoSymbol,
+      chatId: ctx.chat.id, // Add the chat ID to the query
+      timestamp: { $lt: latestCrypto.timestamp }
+    })
+      .sort("-timestamp")
+      .exec();
+  
+    if (!previousCrypto) {
+      ctx.reply(
+        `Sorry, could not find any previous data for ${cryptoSymbol}. Please try again later.`
+      );
+      return;
+    }
+  
+    const priceChange =
+      ((latestCrypto.price - previousCrypto.price) / previousCrypto.price) * 100;
+  
+    ctx.reply(
+      `The price of ${cryptoSymbol} has changed by ${priceChange.toFixed(
+        2
+      )}% from ${previousCrypto.price} to ${latestCrypto.price}.`
+    );
+  }
+  
 
       if(command === "/chart") {
         if (args[0]) {
@@ -226,6 +267,26 @@ Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for
           ctx.reply("Please use the following format: /cancelalert ALERT_ID");
         }
       }
+
+      if(command==='/feedback') {
+        // Get the chat ID and feedback message
+        const chatId = ctx.chat.id;
+        const feedback = ctx.message.text.substring(9).trim(); // Remove the '/feedback' command from the message
+      
+        // Save the feedback to MongoDB
+        const newFeedback = new Feedback({ chatId, feedback });
+        newFeedback.save()
+          .then(() => {
+            // Reply with a confirmation message
+            ctx.reply('Thank you for your feedback!');
+          })
+          .catch(err => {
+            // Reply with an error message
+            ctx.reply('Sorry, there was an error saving your feedback. Please try again later.');
+            console.log(err);
+          });
+      }
+
     }
   } catch (error) {
     console.log(error);
