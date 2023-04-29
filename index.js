@@ -1,15 +1,17 @@
 require("dotenv").config();
+const axios = require("axios");
 
 const {
   getPrice,
-  generateCryptoChart,fetchTopLosersAndGainers
+  generateCryptoChart,
+  fetchTopLosersAndGainers,
 } = require("./modules/price");
 
 const { Telegraf } = require("telegraf");
 const mongoose = require("mongoose");
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_API);
-let cryptoSymbol= "bitcoin";
+let cryptoSymbol = "bitcoin";
 
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
@@ -19,26 +21,36 @@ mongoose.connect(process.env.MONGODB_URI, {
 const feedbackSchema = new mongoose.Schema({
   chatId: { type: Number, required: true },
   feedback: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now }
+  timestamp: { type: Date, default: Date.now },
 });
-const Feedback = mongoose.model('Feedback', feedbackSchema);
+const Feedback = mongoose.model("Feedback", feedbackSchema);
 
+const historySchema = new mongoose.Schema({
+  chatId: { type: Number, required: true },
+  userId: { type: Number, required: true },
+  command: { type: String, required: true },
+  timestamp: { type: Date, default: Date.now },
+});
+
+const History = mongoose.model("History", historySchema);
 
 const userSchema = new mongoose.Schema({
-  chatId: String
+  chatId: String,
+  firstName: { type: String },
+  lastName: { type: String },
+  timestamp: { type: Date, default: Date.now },
 });
 
-const User = mongoose.model('User', userSchema);
+const User = mongoose.model("User", userSchema);
 
 const cryptoSchema = new mongoose.Schema({
   chatId: String,
   cryptoSymbol: String,
   price: Number,
-  timestamp: Date
+  timestamp: Date,
 });
 
-const Crypto = mongoose.model('Crypto', cryptoSchema);
-
+const Crypto = mongoose.model("Crypto", cryptoSchema);
 
 const alertSchema = new mongoose.Schema({
   symbol: String,
@@ -81,6 +93,20 @@ async function checkAlerts() {
 
 setInterval(checkAlerts, 60000);
 
+bot.use((ctx, next) => {
+  // Get the chat ID, user ID, and command name
+  const chatId = ctx.chat.id;
+  const userId = ctx.from.id;
+  const command = ctx.message.text.split(" ")[0]; // Get the first word of the message as the command name
+
+  // Save the history to MongoDB
+  const newHistory = new History({ chatId, userId, command });
+  newHistory.save().catch((err) => console.log(err));
+
+  // Call the next middleware function or command handler
+  return next();
+});
+
 bot.on("message", async (ctx) => {
   try {
     const { message_id, from, chat, date, text } = ctx.message;
@@ -91,10 +117,9 @@ bot.on("message", async (ctx) => {
       const [command, ...args] = text.split(" ");
 
       if (command === "/start") {
-
-        const user = new User({ chatId: ctx.chat.id });
+        const { first_name: firstName, last_name: lastName } = ctx.from;
+        const user = new User({ chatId: ctx.chat.id, firstName, lastName });
         await user.save();
-      
 
         const welcomeMessage = `Hello ${from.first_name}! Here are the available commands:
 /price [SYMBOL] - Get the current price of the specified cryptocurrency in USD.
@@ -105,80 +130,77 @@ Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for
         ctx.reply(welcomeMessage);
       }
 
- 
+      if (command === "/price") {
+        if (args[0]) {
+          cryptoSymbol = args[0].toLowerCase() || cryptoSymbol;
+        }
 
+        const price = await getPrice(cryptoSymbol);
 
-  if (command === "/price") {
-    if (args[0]) {
-      cryptoSymbol = args[0].toLowerCase() || cryptoSymbol;
-    }
-  
-    const price = await getPrice(cryptoSymbol);
-  
-    // Save the cryptocurrency data to MongoDB
-    const crypto = new Crypto({
-      chatId: ctx.chat.id, // Add the chat ID to the schema
-      cryptoSymbol,
-      price,
-      timestamp: new Date()
-    });
-  
-    await crypto.save();
-  
-    ctx.reply(`${cryptoSymbol} is $${price} USD`);
-  }
-  
-  if (command === "/pricechange") {
-    const args = ctx.message.text.split(" ");
-    const cryptoSymbol = args[1];
-  
-    if (!cryptoSymbol) {
-      ctx.reply(
-        "Please specify a cryptocurrency symbol. Example usage: /pricechange BTC"
-      );
-      return;
-    }
-  
-    // Find the latest cryptocurrency data for the symbol in MongoDB
-    const latestCrypto = await Crypto.findOne({ cryptoSymbol })
-      .sort("-timestamp")
-      .exec();
-  
-    if (!latestCrypto) {
-      ctx.reply(
-        `Sorry, could not find any data for ${cryptoSymbol}. Please try again later.`
-      );
-      return;
-    }
-  
-    // Find the previous cryptocurrency data for the symbol in MongoDB
-    const previousCrypto = await Crypto.findOne({
-      cryptoSymbol,
-      chatId: ctx.chat.id, // Add the chat ID to the query
-      timestamp: { $lt: latestCrypto.timestamp }
-    })
-      .sort("-timestamp")
-      .exec();
-  
-    if (!previousCrypto) {
-      ctx.reply(
-        `Sorry, could not find any previous data for ${cryptoSymbol}. Please try again later.`
-      );
-      return;
-    }
-  
-    const priceChange =
-      ((latestCrypto.price - previousCrypto.price) / previousCrypto.price) * 100;
-  
-    ctx.reply(
-      `The price of ${cryptoSymbol} has changed by ${priceChange.toFixed(
-        2
-      )}% from ${previousCrypto.price} to ${latestCrypto.price}.`
-    );
-  }
-  
+        // Save the cryptocurrency data to MongoDB
+        const crypto = new Crypto({
+          chatId: ctx.chat.id, // Add the chat ID to the schema
+          cryptoSymbol,
+          price,
+          timestamp: new Date(),
+        });
 
-      if(command === "/chart") {
+        await crypto.save();
+
+        ctx.reply(`${cryptoSymbol} is $${price} USD`);
+      }
+
+      if (command === "/pricechange") {
+        const args = ctx.message.text.split(" ");
+        const cryptoSymbol = args[1];
+
+        if (!cryptoSymbol) {
+          ctx.reply(
+            "Please specify a cryptocurrency symbol. Example usage: /pricechange BTC"
+          );
+          return;
+        }
+
+        // Find the latest cryptocurrency data for the symbol in MongoDB
+        const latestCrypto = await Crypto.findOne({ cryptoSymbol })
+          .sort("-timestamp")
+          .exec();
+
+        if (!latestCrypto) {
+          ctx.reply(
+            `Sorry, could not find any data for ${cryptoSymbol}. Please try again later.`
+          );
+          return;
+        }
+
+        // Find the previous cryptocurrency data for the symbol in MongoDB
+        const previousCrypto = await Crypto.findOne({
+          cryptoSymbol,
+          chatId: ctx.chat.id, // Add the chat ID to the query
+          timestamp: { $lt: latestCrypto.timestamp },
+        })
+          .sort("-timestamp")
+          .exec();
+
+        if (!previousCrypto) {
+          ctx.reply(
+            `Sorry, could not find any previous data for ${cryptoSymbol}. Please try again later.`
+          );
+          return;
+        }
+
+        const priceChange =
+          ((latestCrypto.price - previousCrypto.price) / previousCrypto.price) *
+          100;
+
+        ctx.reply(
+          `The price of ${cryptoSymbol} has changed by ${priceChange.toFixed(
+            2
+          )}% from ${previousCrypto.price} to ${latestCrypto.price}.`
+        );
+      }
+
+      if (command === "/chart") {
         if (args[0]) {
           cryptoSymbol = args[0].toLowerCase() || cryptoSymbol;
         }
@@ -188,24 +210,34 @@ Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for
         ctx.replyWithPhoto({ source: imageBuffer });
       }
 
-      if(command==="/fetchTop") {
+      if (command === "/fetchTop") {
         try {
           const { topGainers, topLosers } = await fetchTopLosersAndGainers();
-      
+
           const outputMessage = `
             <b>Top gainers:</b>
-            ${topGainers.map((coin) => `${coin.name} (${coin.symbol}): ${coin.price_change_percentage_24h}%`).join('\n')}
+            ${topGainers
+              .map(
+                (coin) =>
+                  `${coin.name} (${coin.symbol}): ${coin.price_change_percentage_24h}%`
+              )
+              .join("\n")}
             
             <b>Top losers:</b>
-            ${topLosers.map((coin) => `${coin.name} (${coin.symbol}): ${coin.price_change_percentage_24h}%`).join('\n')}
+            ${topLosers
+              .map(
+                (coin) =>
+                  `${coin.name} (${coin.symbol}): ${coin.price_change_percentage_24h}%`
+              )
+              .join("\n")}
           `;
-      
+
           ctx.replyWithHTML(outputMessage);
         } catch (error) {
           console.error("Failed to fetch top losers and gainers:", error);
-          ctx.reply('Sorry, I was unable to fetch the top losers and gainers.');
+          ctx.reply("Sorry, I was unable to fetch the top losers and gainers.");
         }
-      };
+      }
 
       if (command === "/alert") {
         if (args.length >= 3) {
@@ -244,8 +276,6 @@ Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for
         }
       }
 
-      
-
       if (command === "/cancelalert") {
         if (args[0]) {
           const alertId = args[0];
@@ -268,25 +298,27 @@ Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for
         }
       }
 
-      if(command==='/feedback') {
+      if (command === "/feedback") {
         // Get the chat ID and feedback message
         const chatId = ctx.chat.id;
         const feedback = ctx.message.text.substring(9).trim(); // Remove the '/feedback' command from the message
-      
+
         // Save the feedback to MongoDB
         const newFeedback = new Feedback({ chatId, feedback });
-        newFeedback.save()
+        newFeedback
+          .save()
           .then(() => {
             // Reply with a confirmation message
-            ctx.reply('Thank you for your feedback!');
+            ctx.reply("Thank you for your feedback!");
           })
-          .catch(err => {
+          .catch((err) => {
             // Reply with an error message
-            ctx.reply('Sorry, there was an error saving your feedback. Please try again later.');
+            ctx.reply(
+              "Sorry, there was an error saving your feedback. Please try again later."
+            );
             console.log(err);
           });
       }
-
     }
   } catch (error) {
     console.log(error);
