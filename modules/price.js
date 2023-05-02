@@ -30,13 +30,13 @@ async function fetchTopLosersAndGainers() {
 
 
 
-function getPrice(cryptocSymbol) {
+function getPrice(cryptoSymbol) {
   return axios
     .get(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${cryptocSymbol}&vs_currencies=usd`
+      `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoSymbol}&vs_currencies=usd`
     )
     .then((response) => {
-      const price = response.data[cryptocSymbol].usd;
+      const price = response.data[cryptoSymbol].usd;
 
       return price;
     })
@@ -136,4 +136,4 @@ exports.getPrice= getPrice;
 exports.fetchTopLosersAndGainers= fetchTopLosersAndGainers;
 
 
-exports.fetchTopLosersAndGainers = fetchTopLosersAndGainers;
+
