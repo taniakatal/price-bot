@@ -27,7 +27,6 @@ const Feedback = mongoose.model("Feedback", feedbackSchema);
 
 const historySchema = new mongoose.Schema({
   chatId: { type: Number, required: true },
-  userId: { type: Number, required: true },
   command: { type: String, required: true },
   timestamp: { type: Date, default: Date.now },
 });
@@ -68,7 +67,7 @@ async function checkAlerts() {
     const currentPrice = await getPrice(symbol);
     const alertsAbove = await Alert.find({
       symbol,
-      type: "above",
+      type: "above", 
       price: { $lte: currentPrice },
     });
     const alertsBelow = await Alert.find({
@@ -96,11 +95,10 @@ setInterval(checkAlerts, 60000);
 bot.use((ctx, next) => {
   // Get the chat ID, user ID, and command name
   const chatId = ctx.chat.id;
-  const userId = ctx.from.id;
   const command = ctx.message.text.split(" ")[0]; // Get the first word of the message as the command name
 
   // Save the history to MongoDB
-  const newHistory = new History({ chatId, userId, command });
+  const newHistory = new History({ chatId, command });
   newHistory.save().catch((err) => console.log(err));
 
   // Call the next middleware function or command handler
