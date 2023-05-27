@@ -1,10 +1,12 @@
 require("dotenv").config();
 const axios = require("axios");
-
+// const emojiRegex = require("emoji-regex");
+const { handleIfStatements } = require('./modules/statement');
 const {
   getPrice,
   generateCryptoChart,
   fetchTopLosersAndGainers,
+ getTrendingcrypto,
 } = require("./modules/price");
 
 const { Telegraf } = require("telegraf");
@@ -111,6 +113,8 @@ bot.on("message", async (ctx) => {
 
     console.log("@" + (from.username || "X") + " - " + chat.id + " - " + text);
 
+    handleIfStatements(ctx, text);
+   
     if (text.startsWith("/")) {
       const [command, ...args] = text.split(" ");
 
@@ -119,13 +123,33 @@ bot.on("message", async (ctx) => {
         const user = new User({ chatId: ctx.chat.id, firstName, lastName });
         await user.save();
 
-        const welcomeMessage = `Hello ${from.first_name}! Here are the available commands:
-/price [SYMBOL] - Get the current price of the specified cryptocurrency in USD.
-/chart [SYMBOL] - Get a chart of the specified cryptocurrency's price history.
-/alert SYMBOL PRICE - Set a price alert for the specified cryptocurrency when it reaches or falls below the given price in USD.
-/viewalerts - View all your active price alerts.
-Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for Ethereum. If no symbol is provided, the default is Bitcoin.`;
+        const welcomeMessage = `Hello ${from.first_name}!`;
         ctx.reply(welcomeMessage);
+      }
+
+      if (command === "/help") {
+        const helpMessage = `
+          Hello! I am taniapricebot Bot. Here are some commands you can use:
+      
+          /start - Start a conversation with the bot
+          /price <symbol> - Get the current price of a cryptocurrency in USD (e.g. /price bitcoin)
+          /chart <symbol> - Get a chart of the historical price of a cryptocurrency (e.g. /chart ethereum)
+          /terms - Get definitions of common trading terms
+          /theory - Get a brief overview of trading theory
+          /calculate <expression> - Calculate a mathematical expression (e.g. /calculate 2 + 3)
+      
+          You can also ask me questions like:
+          - "How are you?"
+          - "What is your name?"
+          - "Thank you"
+          - "Bye"
+          - "How do I get started with trading?"
+          - "What is technical analysis?"
+          - "What is fundamental analysis?"
+      
+          Note: Some commands may require additional arguments. Please follow the examples provided.
+        `;
+        ctx.reply(helpMessage);
       }
 
       if (command === "/price") {
@@ -316,6 +340,46 @@ Replace [SYMBOL] with the cryptocurrency symbol, like BTC for Bitcoin or ETH for
             );
             console.log(err);
           });
+      }
+
+      if (command === "/terms") {
+        // Provide definitions of common trading terms
+        const terms = `
+          Common trading terms:
+          - Bullish: When the market is expected to rise in price
+          - Bearish: When the market is expected to fall in price
+          - Long: When a trader buys a security with the expectation that it will rise in price
+          - Short: When a trader sells a security with the expectation that it will fall in price
+          - Stop loss: An order to sell a security at a specific price in order to limit losses
+          - Take profit: An order to sell a security at a specific price in order to lock in profits
+          - Resistance: A price level at which a security has difficulty breaking above
+          - Support: A price level at which a security has difficulty breaking below
+        `;
+        ctx.reply(terms);
+      }
+
+      if (command === "/theory") {
+        // Provide a brief overview of trading theory
+        const theory = `
+          Trading theory is the study of market behavior and price movement in order to make informed trading decisions. 
+          The goal of trading is to buy low and sell high, but there are many factors that can influence market prices. 
+          Successful traders use technical analysis, fundamental analysis, and risk management strategies to maximize profits and minimize losses.
+        `;
+        ctx.reply(theory);
+      }
+
+      if (command === "/trending") {
+        const trendingCryptocurrencies = await getTrendingcrypto();
+        if (trendingCryptocurrencies.length > 0) {
+          const message = trendingCryptocurrencies
+            .map((coin) => `🔸 ${coin.item.name} (${coin.item.symbol})`)
+            .join("\n");
+          ctx.replyWithHTML(`Trending Cryptocurrencies:\n\n${message}`);
+        } else {
+          ctx.reply(
+            "Failed to fetch trending cryptocurrencies. Please try again later."
+          );
+        }
       }
     }
   } catch (error) {
