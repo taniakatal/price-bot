@@ -36,7 +36,7 @@ function getPrice(cryptoSymbol) {
       `https://api.coingecko.com/api/v3/simple/price?ids=${cryptoSymbol}&vs_currencies=usd`
     )
     .then((response) => {
-      const price = response.data[cryptoSymbol].usd;
+      const price = response.data[cryptoSymbol]?.usd;
 
       return price;
     })
