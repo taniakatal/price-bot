@@ -9,7 +9,7 @@ const {
   getCryptocurrencyInfo,
   getTrendingcrypto,
   getExchangeRate,
-  getFinancialNews,
+ 
 } = require("./modules/price");
 const { Telegraf, Markup } = require("telegraf");
 
