@@ -28,7 +28,20 @@ async function fetchTopLosersAndGainers() {
   }
 }
 
+async function getExchangeRate(baseCurrency, targetCurrency) {
+  try {
+    const response = await axios.get(`https://api.exchangerate-api.com/v4/latest/${baseCurrency}`);
+    const rates = response.data.rates;
 
+    if (targetCurrency in rates) {
+      return rates[targetCurrency];
+    } else {
+      throw new Error('Invalid currency pair.');
+    }
+  } catch (error) {
+    throw new Error('An error occurred while fetching the exchange rate.');
+  }
+}
 
 function getPrice(cryptoSymbol) {
   return axios
@@ -108,6 +121,8 @@ function getTrendingcrypto() {
     });
 }
 
+
+
 async function fetchPublicTreasuryInfo(coinId) {
   try {
     const response = await axios.get(
@@ -132,6 +147,10 @@ exports.getCryptocurrencyInfo = getCryptocurrencyInfo;
 exports.generateCryptoChart = generateCryptoChart;
 
 exports.getPrice= getPrice;
+
+
+
+exports.getExchangeRate= getExchangeRate;
 
 exports.fetchTopLosersAndGainers= fetchTopLosersAndGainers;
 

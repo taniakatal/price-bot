@@ -1,15 +1,18 @@
 require("dotenv").config();
 const axios = require("axios");
-// const emojiRegex = require("emoji-regex");
-const { handleIfStatements } = require('./modules/statement');
+
+const { handleIfStatements } = require("./modules/statement");
 const {
   getPrice,
   generateCryptoChart,
   fetchTopLosersAndGainers,
- getTrendingcrypto,
+  getCryptocurrencyInfo,
+  getTrendingcrypto,
+  getExchangeRate,
+  getFinancialNews,
 } = require("./modules/price");
+const { Telegraf, Markup } = require("telegraf");
 
-const { Telegraf } = require("telegraf");
 const mongoose = require("mongoose");
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_API);
@@ -21,43 +24,115 @@ mongoose.connect(process.env.MONGODB_URI, {
 });
 
 const feedbackSchema = new mongoose.Schema({
-  chatId: { type: Number, required: true },
-  feedback: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now },
+  chatId: {
+    type: Number,
+    required: true,
+    unique: true,
+  },
+  feedback: {
+    type: String,
+    required: true,
+    minlength: 10,
+    maxlength: 200,
+  },
+  timestamp: {
+    type: Date,
+    default: Date.now,
+  },
 });
+
 const Feedback = mongoose.model("Feedback", feedbackSchema);
 
 const historySchema = new mongoose.Schema({
-  chatId: { type: Number, required: true },
-  command: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now },
+  chatId: {
+    type: Number,
+    required: true,
+    unique: true,
+  },
+  command: {
+    type: String,
+    required: true,
+  },
+  timestamp: {
+    type: Date,
+    default: Date.now,
+  },
 });
 
 const History = mongoose.model("History", historySchema);
 
 const userSchema = new mongoose.Schema({
-  chatId: String,
-  firstName: { type: String },
-  lastName: { type: String },
-  timestamp: { type: Date, default: Date.now },
+  chatId: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  firstName: {
+    type: String,
+    required: true,
+    trim: true,
+    minlength: 2,
+    maxlength: 50,
+  },
+  lastName: {
+    type: String,
+    required: true,
+    trim: true,
+    minlength: 2,
+    maxlength: 50,
+  },
+  timestamp: {
+    type: Date,
+    default: Date.now,
+    required: true,
+  },
 });
 
 const User = mongoose.model("User", userSchema);
 
 const cryptoSchema = new mongoose.Schema({
-  chatId: String,
-  cryptoSymbol: String,
-  price: Number,
-  timestamp: Date,
+  chatId: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  cryptoSymbol: {
+    type: String,
+    required: true,
+  },
+  price: {
+    type: Number,
+    required: true,
+    min: 0,
+  },
+  timestamp: {
+    type: Date,
+    default: Date.now,
+    required: true,
+  },
 });
 
 const Crypto = mongoose.model("Crypto", cryptoSchema);
 
 const alertSchema = new mongoose.Schema({
-  symbol: String,
-  price: Number,
-  type: { type: String, enum: ["above", "below"] },
-  chatId: Number,
+  symbol: {
+    type: String,
+    required: true,
+  },
+  price: {
+    type: Number,
+    required: true,
+    min: 0,
+  },
+  type: {
+    type: String,
+    enum: ["above", "below"],
+    required: true,
+  },
+  chatId: {
+    type: Number,
+    required: true,
+  },
 });
 
 const Alert = mongoose.model("Alert", alertSchema);
@@ -69,7 +144,7 @@ async function checkAlerts() {
     const currentPrice = await getPrice(symbol);
     const alertsAbove = await Alert.find({
       symbol,
-      type: "above", 
+      type: "above",
       price: { $lte: currentPrice },
     });
     const alertsBelow = await Alert.find({
@@ -114,7 +189,7 @@ bot.on("message", async (ctx) => {
     console.log("@" + (from.username || "X") + " - " + chat.id + " - " + text);
 
     handleIfStatements(ctx, text);
-   
+
     if (text.startsWith("/")) {
       const [command, ...args] = text.split(" ");
 
@@ -131,11 +206,20 @@ bot.on("message", async (ctx) => {
         const helpMessage = `
           Hello! I am taniapricebot Bot. Here are some commands you can use:
       
-          /start - Start a conversation with the bot
-          /price <symbol> - Get the current price of a cryptocurrency in USD (e.g. /price bitcoin)
-          /chart <symbol> - Get a chart of the historical price of a cryptocurrency (e.g. /chart ethereum)
-          /terms - Get definitions of common trading terms
-          /theory - Get a brief overview of trading theory
+          Available commands:
+    - /price [symbol]: Get the current price of a cryptocurrency.
+    - /pricechange [symbol]: Get the price change of a cryptocurrency.
+    - /chart [symbol]: Get a chart of the price history for a cryptocurrency.
+    - /fetchTop: Fetch the top gainers and top losers in the market.
+    - /alert [symbol] [price] [above/below]: Set a price alert for a cryptocurrency.
+    - /viewalerts: View your active price alerts.
+    - /cancelalert [alertId]: Cancel a price alert.
+    - /feedback [message]: Provide feedback to the bot.
+    - /terms: Get definitions of common trading terms.
+    - /theory: Get a brief overview of trading theory.
+    - /trending: Get a list of trending cryptocurrencies.
+  
+
           /calculate <expression> - Calculate a mathematical expression (e.g. /calculate 2 + 3)
       
           You can also ask me questions like:
@@ -261,6 +345,42 @@ bot.on("message", async (ctx) => {
         }
       }
 
+      if (command === "/cryptomarketdata") {
+        const coinId = args[0];
+
+        if (!coinId) {
+          ctx.reply(
+            "Please provide a valid cryptocurrency coin ID. Usage: /cryptomarketdata [COIN_ID]"
+          );
+          return;
+        }
+
+        try {
+          const data = await getCryptocurrencyInfo(coinId);
+
+          // Extract relevant information
+          const name = data.name;
+          const symbol = data.symbol;
+          const price = data.market_data.current_price.usd;
+          const marketCap = data.market_data.market_cap.usd;
+          const circulatingSupply = data.market_data.circulating_supply;
+          const totalSupply = data.market_data.total_supply;
+
+          // Send the information as a message
+
+          ctx.reply(`
+        ${name} (${symbol})
+        Price: $${price}
+        Market Cap: $${marketCap}
+        Circulating Supply: ${circulatingSupply}
+        Total Supply: ${totalSupply}
+        `);
+        } catch (error) {
+          console.error(error);
+          ctx.reply(error.message);
+        }
+      }
+
       if (command === "/alert") {
         if (args.length >= 3) {
           const symbol = args[0].toLowerCase();
@@ -340,6 +460,28 @@ bot.on("message", async (ctx) => {
             );
             console.log(err);
           });
+      }
+
+      if (command === "/rates") {
+        const args = ctx.message.text.split(" ");
+
+        if (args.length !== 3) {
+          ctx.reply(
+            "Please use the following format: /rate <base_currency> <target_currency>"
+          );
+          return;
+        }
+
+        const baseCurrency = args[1].toUpperCase();
+        const targetCurrency = args[2].toUpperCase();
+
+        try {
+          const rate = await getExchangeRate(baseCurrency, targetCurrency);
+          ctx.reply(`1 ${baseCurrency} = ${rate} ${targetCurrency}`);
+        } catch (error) {
+          console.log(error);
+          ctx.reply("An error occurred while fetching the exchange rate.");
+        }
       }
 
       if (command === "/terms") {
