@@ -1,7 +1,7 @@
 const axios = require("axios");
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 const canvas = new ChartJSNodeCanvas({ width: 1000, height: 1000 });
-
+const ta = require("ta-lib");
 
 async function fetchTopLosersAndGainers() {
   try {
@@ -11,16 +11,22 @@ async function fetchTopLosersAndGainers() {
     const data = response.data;
 
     console.log(data);
-    
-    const topGainers = data.filter(coin => coin.price_change_percentage_24h > 0)
-                           .sort((a, b) => b.price_change_percentage_24h - a.price_change_percentage_24h);
-    
-    const topLosers = data.filter(coin => coin.price_change_percentage_24h < 0)
-                          .sort((a, b) => a.price_change_percentage_24h - b.price_change_percentage_24h);
-    
+
+    const topGainers = data
+      .filter((coin) => coin.price_change_percentage_24h > 0)
+      .sort(
+        (a, b) => b.price_change_percentage_24h - a.price_change_percentage_24h
+      );
+
+    const topLosers = data
+      .filter((coin) => coin.price_change_percentage_24h < 0)
+      .sort(
+        (a, b) => a.price_change_percentage_24h - b.price_change_percentage_24h
+      );
+
     return {
       topGainers,
-      topLosers
+      topLosers,
     };
   } catch (error) {
     console.error("Failed to fetch top losers and gainers:", error);
@@ -28,18 +34,52 @@ async function fetchTopLosersAndGainers() {
   }
 }
 
+// async function calculateSMA(data, period) {
+//   return new Promise((resolve, reject) => {
+//     try {
+//       const closePrices = data.map((item) => item[4]); // Assuming the closing price is at index 4
+//       const sma = ta.SMA.calculate({ period, values: closePrices });
+//       resolve(sma);
+//     } catch (error) {
+//       reject(error);
+//     }
+//   });
+// }
+
+function calculateSMA(data, period) {
+  const closePrices = data.map((item) => item[4]); // Assuming the closing price is at index 4
+
+  if (closePrices.length < period) {
+    throw new Error("Insufficient data to calculate the Simple Moving Average.");
+  }
+
+  const sma = [];
+
+  for (let i = period - 1; i < closePrices.length; i++) {
+    const sum = closePrices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
+    const average = sum / period;
+    sma.push(average);
+  }
+
+  return sma;
+}
+
+
+
 async function getExchangeRate(baseCurrency, targetCurrency) {
   try {
-    const response = await axios.get(`https://api.exchangerate-api.com/v4/latest/${baseCurrency}`);
+    const response = await axios.get(
+      `https://api.exchangerate-api.com/v4/latest/${baseCurrency}`
+    );
     const rates = response.data.rates;
 
     if (targetCurrency in rates) {
       return rates[targetCurrency];
     } else {
-      throw new Error('Invalid currency pair.');
+      throw new Error("Invalid currency pair.");
     }
   } catch (error) {
-    throw new Error('An error occurred while fetching the exchange rate.');
+    throw new Error("An error occurred while fetching the exchange rate.");
   }
 }
 
@@ -57,9 +97,6 @@ function getPrice(cryptoSymbol) {
       console.log(`Error fetching price data: ${error}`);
     });
 }
-
-
-
 
 async function generateCryptoChart(cryptoSymbol) {
   const response = await axios.get(
@@ -121,8 +158,6 @@ function getTrendingcrypto() {
     });
 }
 
-
-
 async function fetchPublicTreasuryInfo(coinId) {
   try {
     const response = await axios.get(
@@ -140,19 +175,26 @@ async function fetchPublicTreasuryInfo(coinId) {
 }
 exports.fetchPublicTreasuryInfo = fetchPublicTreasuryInfo;
 
-exports.getTrendingcrypto = getTrendingcrypto;
+// exports.getTrendingcrypto = getTrendingcrypto;
 
-exports.getCryptocurrencyInfo = getCryptocurrencyInfo;
+// exports.getCryptocurrencyInfo = getCryptocurrencyInfo;
 
-exports.generateCryptoChart = generateCryptoChart;
+// exports.generateCryptoChart = generateCryptoChart;
 
-exports.getPrice= getPrice;
+// exports.getPrice = getPrice;
 
+// exports.calculateSMA= calculateSMA;
 
+// exports.getExchangeRate = getExchangeRate;
 
-exports.getExchangeRate= getExchangeRate;
-
-exports.fetchTopLosersAndGainers= fetchTopLosersAndGainers;
-
-
-
+// exports.fetchTopLosersAndGainers = fetchTopLosersAndGainers;
+module.exports = {
+  fetchTopLosersAndGainers,
+  calculateSMA,
+  getExchangeRate,
+  getPrice,
+  generateCryptoChart,
+  getCryptocurrencyInfo,
+  getTrendingcrypto,
+  fetchPublicTreasuryInfo,
+};

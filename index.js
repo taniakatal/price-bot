@@ -1,22 +1,38 @@
 require("dotenv").config();
 const axios = require("axios");
+// const ta = require("ta-lib");
 
 const { handleIfStatements } = require("./modules/statement");
-const {
+// const {
+//   getPrice,
+//   generateCryptoChart,
+//   fetchTopLosersAndGainers,
+//   getCryptocurrencyInfo,
+//   getTrendingcrypto,
+//   getExchangeRate,
+//   calculateSMA
+// } = require("./modules/price");
+
+module.exports = {
+  fetchTopLosersAndGainers,
+  calculateSMA,
+  getExchangeRate,
   getPrice,
   generateCryptoChart,
-  fetchTopLosersAndGainers,
   getCryptocurrencyInfo,
   getTrendingcrypto,
-  getExchangeRate,
- 
+  fetchPublicTreasuryInfo,
 } = require("./modules/price");
-const { Telegraf, Markup } = require("telegraf");
+
+const { Telegraf } = require("telegraf");
+const { Extra, Markup } = require("telegraf");
 
 const mongoose = require("mongoose");
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_API);
 let cryptoSymbol = "bitcoin";
+let userChatId = null;
+let agentChatId = null;
 
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
@@ -188,6 +204,8 @@ bot.on("message", async (ctx) => {
 
     console.log("@" + (from.username || "X") + " - " + chat.id + " - " + text);
 
+    userChatId = ctx.chat.id;
+
     handleIfStatements(ctx, text);
 
     if (text.startsWith("/")) {
@@ -200,6 +218,95 @@ bot.on("message", async (ctx) => {
 
         const welcomeMessage = `Hello ${from.first_name}!`;
         ctx.reply(welcomeMessage);
+      }
+
+      if (command === "/handoff") {
+        userChatId = ctx.chat.id;
+        agentChatId = "-1001904350813"; // Replace with the chat ID of the human agent
+
+        // Send a message to the user
+        ctx.reply("Connecting you to a human agent. Please wait...");
+
+        const userMessage = ctx.message.text;
+        bot.telegram.sendMessage(
+          agentChatId,
+          `User: ${ctx.from.username}\n\n${userMessage}`
+        );
+
+        // Notify the human agent
+        const notificationMessage = `New handoff from User: ${ctx.from.username}`;
+        bot.telegram.sendMessage(agentChatId, notificationMessage);
+
+        // Log the handoff event
+        const logMessage = `Handoff initiated by User: ${ctx.from.username}`;
+        console.log(logMessage);
+
+        const inlineKeyboard = Markup.inlineKeyboard([
+          Markup.button.url("Return to Bot", "https://t.me/taniapricebot"),
+        ]);
+        ctx.reply("You have been connected to a human agent.", inlineKeyboard);
+      }
+
+      if (command === "/news") {
+        try {
+          // Fetch the latest cryptocurrency news articles from CoinGecko's news API
+          const response = await axios.get(
+            "https://api.coingecko.com/api/v3/news"
+          );
+          const articles = response.data;
+
+          // Limit the number of articles to display
+          const maxArticles = 5;
+          const limitedArticles = articles.slice(0, maxArticles);
+
+          // Send the news articles as a list
+          limitedArticles.forEach((article) => {
+            ctx.replyWithHTML(
+              `<b>${article.title}</b>\n${article.description}\n<a href="${article.url}">Read more</a>`,
+              { disable_web_page_preview: true }
+            );
+          });
+        } catch (error) {
+          ctx.reply("Error retrieving news. Please try again later.");
+        }
+      }
+
+      if (command === "/convert") {
+        const message = ctx.message.text;
+        const [, amountStr, baseCurrency, , targetCurrency] =
+          message.split(" ");
+
+        // Validate input
+        if (!amountStr || !baseCurrency || !targetCurrency) {
+          ctx.reply(
+            "Invalid command format. Please use /convert [amount] [base_currency] to [target_currency]"
+          );
+          return;
+        }
+
+        const amount = parseFloat(amountStr);
+
+        if (isNaN(amount) || amount <= 0) {
+          ctx.reply("Invalid amount. Please provide a valid numeric value.");
+          return;
+        }
+
+        try {
+          const response = await axios.get(
+            `https://api.coingecko.com/api/v3/simple/price?ids=${baseCurrency}&vs_currencies=${targetCurrency}`
+          );
+
+          const targetPrice = response.data[baseCurrency][targetCurrency];
+          const convertedAmount = amount * targetPrice;
+
+          ctx.reply(
+            `${amount} ${baseCurrency} is approximately ${convertedAmount} ${targetCurrency}`
+          );
+        } catch (error) {
+          ctx.reply(
+            "Error converting currencies. Please check the provided currencies and try again."
+          );
+        }
       }
 
       if (command === "/help") {
@@ -234,6 +341,72 @@ bot.on("message", async (ctx) => {
           Note: Some commands may require additional arguments. Please follow the examples provided.
         `;
         ctx.reply(helpMessage);
+      }
+      if (command === "/prediction") {
+        const coin = ctx.message.text.split(" ")[1];
+
+        if (!coin) {
+          ctx.reply("Please provide a cryptocurrency symbol");
+          return;
+        }
+
+        try {
+          const response = await axios.get(
+            `https://api.coingecko.com/api/v3/coins/${coin}/market_chart?vs_currency=usd&days=30`
+          );
+          const prices = response.data?.prices;
+
+          if (!prices) {
+            ctx.reply("Unable to fetch price data for the cryptocurrency");
+            return;
+          }
+
+          const predictionPeriod = 7; // Number of days to base the prediction on
+          const predictionData = prices.slice(-predictionPeriod); // Get the last N days of data for prediction
+
+          const smaPeriod = 5; // Number of days to calculate the SMA
+          const sma = calculateSMA(predictionData, smaPeriod);
+
+          const lastPrice = predictionData[predictionPeriod - 1][1]; // Assuming the price is at index 1
+          const predictedPrice = sma[sma.length - 1];
+
+          const prediction = `🔮 Prediction: The price of ${coin.toUpperCase()} is expected to ${
+            predictedPrice > lastPrice ? "increase" : "decrease"
+          } based on the ${smaPeriod}-day SMA.`;
+
+          ctx.reply(prediction);
+        } catch (error) {
+          console.error("Error fetching cryptocurrency prediction:", error);
+          ctx.reply(
+            "Oops! Something went wrong while fetching the prediction. Please try again later."
+          );
+        }
+      }
+
+      if (command === "/sentiment") {
+        try {
+          const response = await axios.get(
+            "https://api.coingecko.com/api/v3/global"
+          );
+          const marketData = response.data.data.market_cap_percentage;
+          const bitcoinDominance = marketData.btc;
+
+          let sentimentText;
+          if (bitcoinDominance > 50) {
+            sentimentText = "The market sentiment is bullish 🐮";
+          } else if (bitcoinDominance < 50) {
+            sentimentText = "The market sentiment is bearish 🐻";
+          } else {
+            sentimentText = "The market sentiment is neutral 😐";
+          }
+
+          ctx.reply(sentimentText);
+        } catch (error) {
+          console.error("Error fetching market sentiment:", error);
+          ctx.reply(
+            "An error occurred while fetching the market sentiment. Please try again later."
+          );
+        }
       }
 
       if (command === "/price") {
@@ -510,6 +683,51 @@ bot.on("message", async (ctx) => {
         ctx.reply(theory);
       }
 
+      if (command === "/mostsearched") {
+        try {
+          const trendingCoinsResponse = await axios.get(
+            "https://api.coingecko.com/api/v3/search/trending"
+          );
+          const coins = trendingCoinsResponse.data.coins;
+
+          if (coins && Array.isArray(coins)) {
+            const trendingCoinIds = coins.map((coin) => coin.item.id);
+
+            const pricesResponse = await axios.get(
+              `https://api.coingecko.com/api/v3/simple/price?ids=${trendingCoinIds.join(
+                ","
+              )}&vs_currencies=usd,inr`
+            );
+            const prices = pricesResponse.data;
+
+            const formattedPrices = Object.entries(prices).map(
+              ([coinId, values]) => {
+                const usdPrice = values.usd.toFixed(2);
+                const inrPrice = values.inr.toFixed(2);
+
+                return `${coinId}: $${usdPrice} (₹${inrPrice})`;
+              }
+            );
+
+            ctx.reply(
+              `The most searched cryptocurrencies with prices in USD and Rupees are:\n\n${formattedPrices.join(
+                "\n"
+              )}`
+            );
+          } else {
+            throw new Error("Invalid API response");
+          }
+        } catch (error) {
+          console.error(
+            "Error fetching most searched cryptocurrencies:",
+            error.response.data
+          );
+          ctx.reply(
+            "Oops! Something went wrong while fetching the data. Please try again later."
+          );
+        }
+      }
+
       if (command === "/trending") {
         const trendingCryptocurrencies = await getTrendingcrypto();
         if (trendingCryptocurrencies.length > 0) {
@@ -526,6 +744,14 @@ bot.on("message", async (ctx) => {
     }
   } catch (error) {
     console.log(error);
+  }
+});
+
+bot.on("message", (ctx) => {
+  if (ctx.chat.id === agentChatId && ctx.message.reply_to_message) {
+    // Forward agent's message to the user
+    const userMessageId = ctx.message.reply_to_message.message_id;
+    bot.telegram.forwardMessage(userChatId, agentChatId, userMessageId);
   }
 });
 
