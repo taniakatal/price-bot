@@ -1,4 +1,8 @@
+const axios = require("axios");
 const emojiRegex = require("emoji-regex");
+
+
+
 module.exports = {
   handleIfStatements: function (ctx, text) {
     if (
@@ -29,7 +33,37 @@ module.exports = {
       text.includes("thx")
     ) {
       ctx.reply(`You're welcome!`);
-    } else if (
+    }
+    // Handler for the joke-related user input
+    else if (
+      text.includes("tell me a joke") ||
+      text.includes("say something funny") ||
+      text.includes("make me laugh")
+    ) {
+      // Function to fetch a joke from the JokeAPI
+      function fetchJokeFromAPI() {
+        return axios
+          .get("https://v2.jokeapi.dev/joke/Any?type=single")
+          .then((response) => response.data.joke)
+          .catch((error) => {
+            console.log("Failed to fetch joke from API:", error);
+            throw new Error("Failed to fetch joke from API");
+          });
+      }
+
+      // Execute the asynchronous code using Promise and then syntax
+      fetchJokeFromAPI()
+        .then((joke) => {
+          ctx.reply(joke);
+        })
+        .catch((error) => {
+          console.log("Error:", error);
+          ctx.reply(
+            "Oops! I couldn't fetch a joke at the moment. Here's one for you: Why don't scientists trust atoms? Because they make up everything!"
+          );
+        });
+    } 
+     else if (
       text.includes("bye") ||
       text.includes("goodbye") ||
       text.includes("farewell") ||
@@ -110,6 +144,44 @@ module.exports = {
     ) {
       ctx.reply(
         "A cryptocurrency wallet is a digital wallet that allows you to securely store, send, and receive cryptocurrencies. It consists of a pair of cryptographic keys: a public key and a private key. The public key is used to receive funds, while the private key is used to access and manage your funds. Wallets can be software-based "
+      );
+    } else if (
+      text.includes("what is the stock market") ||
+      text.includes("explain the concept of stock market") ||
+      text.includes("how does the stock market work") ||
+      text.includes("can you provide information about the stock market")
+    ) {
+      ctx.reply(
+        "The stock market is a platform where buyers and sellers trade stocks, which represent ownership in publicly traded companies. It allows companies to raise capital by selling shares, and investors can buy and sell these shares in the secondary market. Stock prices are influenced by various factors such as company performance, market conditions, and investor sentiment."
+      );
+    } else if (
+      text.includes("what is the difference between stocks and bonds") ||
+      text.includes("explain stocks and bonds") ||
+      text.includes("tell me about stocks and bonds") ||
+      text.includes("how do stocks and bonds differ") ||
+      text.includes("can you provide information about stocks and bonds")
+    ) {
+      ctx.reply(
+        "Stocks and bonds are both investment instruments, but they differ in several ways. Stocks represent ownership in a company, while bonds represent debt. Stockholders have the potential for higher returns through capital appreciation and dividends, but they also bear more risk. Bondholders receive fixed interest payments and the return of the principal amount at maturity, providing more stability but lower potential returns."
+      );
+    } else if (
+      text.includes("what is diversification") ||
+      text.includes("explain the concept of diversification") ||
+      text.includes("why is diversification important") ||
+      text.includes("how does diversification work")
+    ) {
+      ctx.reply(
+        "Diversification is a risk management strategy that involves spreading investments across different assets, industries, or geographic regions. It aims to reduce the impact of any single investment on the overall portfolio. By diversifying, investors can potentially lower their risk and increase the likelihood of positive returns, as losses in one investment may be offset by gains in another."
+      );
+    } else if (
+      text.includes("what is an exchange-traded fund (ETF)") ||
+      text.includes("explain ETFs") ||
+      text.includes("tell me about exchange-traded funds") ||
+      text.includes("how do ETFs work") ||
+      text.includes("can you provide information about ETFs")
+    ) {
+      ctx.reply(
+        "An exchange-traded fund (ETF) is an investment fund that holds a diversified portfolio of assets, such as stocks, bonds, or commodities. ETFs are traded on stock exchanges, and their prices fluctuate throughout the trading day. They offer investors exposure to a specific index or sector with the flexibility of trading like a stock. ETFs are popular for their low costs, tax efficiency, and ease of diversification."
       );
     } else if (
       text.includes("What is the mining process in cryptocurrencies?") ||

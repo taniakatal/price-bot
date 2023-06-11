@@ -612,7 +612,90 @@ bot.on("message", async (ctx) => {
           ctx.reply("Please use the following format: /cancelalert ALERT_ID");
         }
       }
+      if (command === "/moonshot") {
+        try {
+          // Fetch the top low-cap cryptocurrencies with significant price increase
+          const response = await axios.get(
+            "https://api.coingecko.com/api/v3/search/trending"
+          );
+          const trendingCoins = response.data.coins;
 
+          // Filter out the low-cap cryptocurrencies
+          const lowCapCoins = trendingCoins.filter(
+            (coin) =>
+              coin.item.market_cap_rank > 100 &&
+              coin.item.market_cap_rank <= 500
+          );
+
+          // Randomly select a coin from the low-cap list
+          const randomIndex = Math.floor(Math.random() * lowCapCoins.length);
+          const moonshotCoin = lowCapCoins[randomIndex].item;
+
+          // Retrieve additional information about the coin
+          const coinInfoResponse = await axios.get(
+            `https://api.coingecko.com/api/v3/coins/${moonshotCoin.id}`
+          );
+          const coinInfo = coinInfoResponse.data;
+
+          // Prepare the response message
+          const message = `
+    Moonshot Coin:
+    Name: ${coinInfo.name}
+    Symbol: ${coinInfo.symbol}
+    Price: ${coinInfo.market_data.current_price.usd} USD
+    Market Cap Rank: ${coinInfo.market_cap_rank}
+    Website: ${coinInfo.links.homepage[0]}
+        `;
+
+          // Send the response to the user
+          ctx.reply(message);
+        } catch (error) {
+          console.error("Error fetching moonshot coin:", error);
+          ctx.reply("Failed to fetch moonshot coin. Please try again later.");
+        }
+      }
+
+      if (command === "/whalewatch") {
+        try {
+          // Fetch the whale watch coins with trading volumes
+          const response = await axios.get(
+            "https://api.coingecko.com/api/v3/exchanges/binance"
+          );
+          const coins = response.data.tickers;
+
+          if (!coins || coins.length === 0) {
+            throw new Error("No whale watch coins found.");
+          }
+
+          // Sort the coins based on trading volume in descending order
+          coins.sort((a, b) => {
+            const volumeA = parseFloat(a.converted_volume.usd);
+            const volumeB = parseFloat(b.converted_volume.usd);
+            return volumeB - volumeA;
+          });
+
+          // Prepare the response message
+          let message =
+            "Whale Watch: Top Cryptocurrencies with High Trading Volume\n\n";
+
+          coins.slice(0, 10).forEach((coin, index) => {
+            const { base, target, converted_volume } = coin;
+            const tradingVolume = parseFloat(
+              converted_volume.usd
+            ).toLocaleString();
+            message += `${index + 1}. ${base}/${target}\n`;
+            message += `   Trading Volume: $${tradingVolume}\n\n`;
+          });
+
+          // Send the response to the user
+          ctx.reply(message);
+        } catch (error) {
+          console.error("Error fetching whale watch coins:", error);
+          ctx.reply(
+            "Failed to fetch whale watch coins. Please try again later."
+          );
+        }
+      }
       if (command === "/feedback") {
         // Get the chat ID and feedback message
         const chatId = ctx.chat.id;
