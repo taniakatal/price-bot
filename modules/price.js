@@ -1,7 +1,7 @@
 const axios = require("axios");
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 const canvas = new ChartJSNodeCanvas({ width: 1000, height: 1000 });
-const ta = require("ta-lib");
+// const ta = require("ta-lib");
 
 async function fetchTopLosersAndGainers() {
   try {
@@ -34,17 +34,6 @@ async function fetchTopLosersAndGainers() {
   }
 }
 
-// async function calculateSMA(data, period) {
-//   return new Promise((resolve, reject) => {
-//     try {
-//       const closePrices = data.map((item) => item[4]); // Assuming the closing price is at index 4
-//       const sma = ta.SMA.calculate({ period, values: closePrices });
-//       resolve(sma);
-//     } catch (error) {
-//       reject(error);
-//     }
-//   });
-// }
 
 function calculateSMA(data, period) {
   const closePrices = data.map((item) => item[4]); // Assuming the closing price is at index 4

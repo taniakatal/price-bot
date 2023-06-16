@@ -3,15 +3,6 @@ const axios = require("axios");
 // const ta = require("ta-lib");
 
 const { handleIfStatements } = require("./modules/statement");
-// const {
-//   getPrice,
-//   generateCryptoChart,
-//   fetchTopLosersAndGainers,
-//   getCryptocurrencyInfo,
-//   getTrendingcrypto,
-//   getExchangeRate,
-//   calculateSMA
-// } = require("./modules/price");
 
 module.exports = {
   fetchTopLosersAndGainers,
@@ -25,7 +16,7 @@ module.exports = {
 } = require("./modules/price");
 
 const { Telegraf } = require("telegraf");
-const { Extra, Markup } = require("telegraf");
+const { Markup } = require("telegraf");
 
 const mongoose = require("mongoose");
 
@@ -130,6 +121,13 @@ const cryptoSchema = new mongoose.Schema({
 
 const Crypto = mongoose.model("Crypto", cryptoSchema);
 
+const crossoverSchema = new mongoose.Schema({
+  cryptocurrency: String,
+  type: String,
+  chatId: Number,
+});
+const Crossover = mongoose.model("Crossover", crossoverSchema);
+
 const alertSchema = new mongoose.Schema({
   symbol: {
     type: String,
@@ -185,6 +183,71 @@ async function checkAlerts() {
 
 setInterval(checkAlerts, 60000);
 
+function checkCrossover() {
+  const smaPeriod = 5; // Number of days to calculate the SMA
+  const lastPeriod = 7; // Number of days to base the prediction on
+
+  Crossover.find({}, (err, crossovers) => {
+    if (err) {
+      console.error("Error retrieving crossovers:", err);
+      return;
+    }
+
+    crossovers.forEach((crossover) => {
+      const { cryptocurrency, type, chatId } = crossover;
+
+      axios
+        .get(
+          `https://api.coingecko.com/api/v3/coins/${cryptocurrency}/market_chart?vs_currency=usd&days=${
+            smaPeriod + lastPeriod
+          }`
+        )
+        .then((response) => {
+          const prices = response.data?.prices;
+
+          if (!prices || prices.length < smaPeriod + lastPeriod) {
+            console.log(`Insufficient price data for ${cryptocurrency}`);
+            return;
+          }
+
+          const closePrices = prices.map((item) => item[1]); // Assuming the price is at index 1
+
+          const sma = [];
+          for (let i = smaPeriod - 1; i < closePrices.length; i++) {
+            const sum = closePrices
+              .slice(i - smaPeriod + 1, i + 1)
+              .reduce((a, b) => a + b, 0);
+            const average = sum / smaPeriod;
+            sma.push(average);
+          }
+
+          const lastSma = sma[sma.length - 1];
+          const prevSma = sma[sma.length - 2];
+
+          if (prevSma && lastSma) {
+            const crossover = prevSma < lastSma; // Assuming bullish crossover (previous SMA < last SMA)
+
+            if (crossover) {
+              const alertType = type === "buy" ? "BUY" : "SELL";
+              const message = `⚠️ Crossover Alert ⚠️\n\n${alertType} ${cryptocurrency.toUpperCase()}`;
+
+              bot.telegram.sendMessage(chatId, message);
+            }
+          }
+        })
+        .catch((error) => {
+          console.error(
+            `Error fetching price data for ${cryptocurrency}:`,
+            error
+          );
+        });
+    });
+  });
+}
+
+// Schedule crossover check every hour
+setInterval(checkCrossover, 3600000); // 1 hour = 3600000 milliseconds
+
 bot.use((ctx, next) => {
   // Get the chat ID, user ID, and command name
   const chatId = ctx.chat.id;
@@ -220,95 +283,6 @@ bot.on("message", async (ctx) => {
         ctx.reply(welcomeMessage);
       }
 
-      if (command === "/handoff") {
-        userChatId = ctx.chat.id;
-        agentChatId = "-1001904350813"; // Replace with the chat ID of the human agent
-
-        // Send a message to the user
-        ctx.reply("Connecting you to a human agent. Please wait...");
-
-        const userMessage = ctx.message.text;
-        bot.telegram.sendMessage(
-          agentChatId,
-          `User: ${ctx.from.username}\n\n${userMessage}`
-        );
-
-        // Notify the human agent
-        const notificationMessage = `New handoff from User: ${ctx.from.username}`;
-        bot.telegram.sendMessage(agentChatId, notificationMessage);
-
-        // Log the handoff event
-        const logMessage = `Handoff initiated by User: ${ctx.from.username}`;
-        console.log(logMessage);
-
-        const inlineKeyboard = Markup.inlineKeyboard([
-          Markup.button.url("Return to Bot", "https://t.me/taniapricebot"),
-        ]);
-        ctx.reply("You have been connected to a human agent.", inlineKeyboard);
-      }
-
-      if (command === "/news") {
-        try {
-          // Fetch the latest cryptocurrency news articles from CoinGecko's news API
-          const response = await axios.get(
-            "https://api.coingecko.com/api/v3/news"
-          );
-          const articles = response.data;
-
-          // Limit the number of articles to display
-          const maxArticles = 5;
-          const limitedArticles = articles.slice(0, maxArticles);
-
-          // Send the news articles as a list
-          limitedArticles.forEach((article) => {
-            ctx.replyWithHTML(
-              `<b>${article.title}</b>\n${article.description}\n<a href="${article.url}">Read more</a>`,
-              { disable_web_page_preview: true }
-            );
-          });
-        } catch (error) {
-          ctx.reply("Error retrieving news. Please try again later.");
-        }
-      }
-
-      if (command === "/convert") {
-        const message = ctx.message.text;
-        const [, amountStr, baseCurrency, , targetCurrency] =
-          message.split(" ");
-
-        // Validate input
-        if (!amountStr || !baseCurrency || !targetCurrency) {
-          ctx.reply(
-            "Invalid command format. Please use /convert [amount] [base_currency] to [target_currency]"
-          );
-          return;
-        }
-
-        const amount = parseFloat(amountStr);
-
-        if (isNaN(amount) || amount <= 0) {
-          ctx.reply("Invalid amount. Please provide a valid numeric value.");
-          return;
-        }
-
-        try {
-          const response = await axios.get(
-            `https://api.coingecko.com/api/v3/simple/price?ids=${baseCurrency}&vs_currencies=${targetCurrency}`
-          );
-
-          const targetPrice = response.data[baseCurrency][targetCurrency];
-          const convertedAmount = amount * targetPrice;
-
-          ctx.reply(
-            `${amount} ${baseCurrency} is approximately ${convertedAmount} ${targetCurrency}`
-          );
-        } catch (error) {
-          ctx.reply(
-            "Error converting currencies. Please check the provided currencies and try again."
-          );
-        }
-      }
-
       if (command === "/help") {
         const helpMessage = `
           Hello! I am taniapricebot Bot. Here are some commands you can use:
@@ -341,72 +315,6 @@ bot.on("message", async (ctx) => {
           Note: Some commands may require additional arguments. Please follow the examples provided.
         `;
         ctx.reply(helpMessage);
-      }
-      if (command === "/prediction") {
-        const coin = ctx.message.text.split(" ")[1];
-
-        if (!coin) {
-          ctx.reply("Please provide a cryptocurrency symbol");
-          return;
-        }
-
-        try {
-          const response = await axios.get(
-            `https://api.coingecko.com/api/v3/coins/${coin}/market_chart?vs_currency=usd&days=30`
-          );
-          const prices = response.data?.prices;
-
-          if (!prices) {
-            ctx.reply("Unable to fetch price data for the cryptocurrency");
-            return;
-          }
-
-          const predictionPeriod = 7; // Number of days to base the prediction on
-          const predictionData = prices.slice(-predictionPeriod); // Get the last N days of data for prediction
-
-          const smaPeriod = 5; // Number of days to calculate the SMA
-          const sma = calculateSMA(predictionData, smaPeriod);
-
-          const lastPrice = predictionData[predictionPeriod - 1][1]; // Assuming the price is at index 1
-          const predictedPrice = sma[sma.length - 1];
-
-          const prediction = `🔮 Prediction: The price of ${coin.toUpperCase()} is expected to ${
-            predictedPrice > lastPrice ? "increase" : "decrease"
-          } based on the ${smaPeriod}-day SMA.`;
-
-          ctx.reply(prediction);
-        } catch (error) {
-          console.error("Error fetching cryptocurrency prediction:", error);
-          ctx.reply(
-            "Oops! Something went wrong while fetching the prediction. Please try again later."
-          );
-        }
-      }
-
-      if (command === "/sentiment") {
-        try {
-          const response = await axios.get(
-            "https://api.coingecko.com/api/v3/global"
-          );
-          const marketData = response.data.data.market_cap_percentage;
-          const bitcoinDominance = marketData.btc;
-
-          let sentimentText;
-          if (bitcoinDominance > 50) {
-            sentimentText = "The market sentiment is bullish 🐮";
-          } else if (bitcoinDominance < 50) {
-            sentimentText = "The market sentiment is bearish 🐻";
-          } else {
-            sentimentText = "The market sentiment is neutral 😐";
-          }
-
-          ctx.reply(sentimentText);
-        } catch (error) {
-          console.error("Error fetching market sentiment:", error);
-          ctx.reply(
-            "An error occurred while fetching the market sentiment. Please try again later."
-          );
-        }
       }
 
       if (command === "/price") {
@@ -487,6 +395,149 @@ bot.on("message", async (ctx) => {
         const imageBuffer = await generateCryptoChart(cryptoSymbol);
 
         ctx.replyWithPhoto({ source: imageBuffer });
+      }
+
+      if (command === "/prediction") {
+        const coin = ctx.message.text.split(" ")[1];
+
+        if (!coin) {
+          ctx.reply("Please provide a cryptocurrency symbol");
+          return;
+        }
+
+        try {
+          const response = await axios.get(
+            `https://api.coingecko.com/api/v3/coins/${coin}/market_chart?vs_currency=usd&days=30`
+          );
+          const prices = response.data?.prices;
+
+          if (!prices) {
+            ctx.reply("Unable to fetch price data for the cryptocurrency");
+            return;
+          }
+
+          const predictionPeriod = 7; // Number of days to base the prediction on
+          const predictionData = prices.slice(-predictionPeriod); // Get the last N days of data for prediction
+
+          const smaPeriod = 5; // Number of days to calculate the SMA
+          const sma = calculateSMA(predictionData, smaPeriod);
+
+          const lastPrice = predictionData[predictionPeriod - 1][1]; // Assuming the price is at index 1
+          const predictedPrice = sma[sma.length - 1];
+
+          const prediction = `🔮 Prediction: The price of ${coin.toUpperCase()} is expected to ${
+            predictedPrice > lastPrice ? "increase" : "decrease"
+          } based on the ${smaPeriod}-day SMA.`;
+
+          ctx.reply(prediction);
+        } catch (error) {
+          console.error("Error fetching cryptocurrency prediction:", error);
+          ctx.reply(
+            "Oops! Something went wrong while fetching the prediction. Please try again later."
+          );
+        }
+      }
+
+      if (command === "/addalertforcrossover") {
+        const [command, cryptocurrency, type] = ctx.message.text.split(" ");
+
+        if (!cryptocurrency || !type) {
+          ctx.reply(
+            "Please provide the cryptocurrency symbol and alert type (buy/sell)."
+          );
+          return;
+        }
+
+        const newCrossover = new Crossover({
+          cryptocurrency: cryptocurrency.toUpperCase(),
+          type: type.toLowerCase(),
+          chatId: ctx.message.chat.id,
+        });
+
+        try {
+          await newCrossover.save();
+          ctx.reply(
+            `Crossover alert for ${cryptocurrency.toUpperCase()} ${type.toUpperCase()} has been added.`
+          );
+        } catch (error) {
+          console.error("Error saving crossover:", error);
+          ctx.reply(
+            "Oops! Something went wrong while saving the crossover. Please try again."
+          );
+        }
+      }
+
+      // Remove command
+      if (command === "/removealertforcrossover") {
+        const [command, cryptocurrency, type] = ctx.message.text.split(" ");
+
+        if (!cryptocurrency || !type) {
+          ctx.reply(
+            "Please provide the cryptocurrency symbol and alert type (buy/sell)."
+          );
+          return;
+        }
+
+        try {
+          await Crossover.deleteOne({
+            cryptocurrency: cryptocurrency.toUpperCase(),
+            type: type.toLowerCase(),
+            chatId: ctx.message.chat.id,
+          });
+          ctx.reply(
+            `Crossover alert for ${cryptocurrency.toUpperCase()} ${type.toUpperCase()} has been removed.`
+          );
+        } catch (error) {
+          console.error("Error removing crossover:", error);
+          ctx.reply(
+            "Oops! Something went wrong while removing the crossover. Please try again."
+          );
+        }
+      }
+
+      // List command
+      if (command === "/listalertforcrossover") {
+        try {
+          const crossovers = await Crossover.find({
+            chatId: ctx.message.chat.id,
+          }).exec();
+          let crossoverList = "Your crossovers:\n\n";
+          crossovers.forEach((crossover) => {
+            crossoverList += `- ${crossover.cryptocurrency.toUpperCase()} ${crossover.type.toUpperCase()}\n`;
+          });
+          ctx.reply(crossoverList);
+        } catch (error) {
+          console.error("Error retrieving crossovers:", error);
+          ctx.reply(
+            "Oops! Something went wrong while fetching the crossovers. Please try again."
+          );
+        }
+      }
+
+      if (command === "/sentiment") {
+        try {
+          const response = await axios.get(
+            "https://api.coingecko.com/api/v3/global"
+          );
+          const marketData = response.data.data.market_cap_percentage;
+          const bitcoinDominance = marketData.btc;
+
+          let sentimentText;
+          if (bitcoinDominance > 50) {
+            sentimentText = "The market sentiment is bullish 🐮";
+          } else if (bitcoinDominance < 50) {
+            sentimentText = "The market sentiment is bearish 🐻";
+          } else {
+            sentimentText = "The market sentiment is neutral 😐";
+          }
+
+          ctx.reply(sentimentText);
+        } catch (error) {
+          console.error("Error fetching market sentiment:", error);
+          ctx.reply(
+            "An error occurred while fetching the market sentiment. Please try again later."
+          );
+        }
       }
 
       if (command === "/fetchTop") {
@@ -718,6 +769,95 @@ bot.on("message", async (ctx) => {
           });
       }
 
+      if (command === "/handoff") {
+        userChatId = ctx.chat.id;
+        agentChatId = "-1001904350813"; // Replace with the chat ID of the human agent
+
+        // Send a message to the user
+        ctx.reply("Connecting you to a human agent. Please wait...");
+
+        const userMessage = ctx.message.text;
+        bot.telegram.sendMessage(
+          agentChatId,
+          `User: ${ctx.from.username}\n\n${userMessage}`
+        );
+
+        // Notify the human agent
+        const notificationMessage = `New handoff from User: ${ctx.from.username}`;
+        bot.telegram.sendMessage(agentChatId, notificationMessage);
+
+        // Log the handoff event
+        const logMessage = `Handoff initiated by User: ${ctx.from.username}`;
+        console.log(logMessage);
+
+        const inlineKeyboard = Markup.inlineKeyboard([
+          Markup.button.url("Return to Bot", "https://t.me/taniapricebot"),
+        ]);
+        ctx.reply("You have been connected to a human agent.", inlineKeyboard);
+      }
+
+      if (command === "/news") {
+        try {
+          // Fetch the latest cryptocurrency news articles from CoinGecko's news API
+          const response = await axios.get(
+            "https://api.coingecko.com/api/v3/news"
+          );
+          const articles = response.data;
+
+          // Limit the number of articles to display
+          const maxArticles = 5;
+          const limitedArticles = articles.slice(0, maxArticles);
+
+          // Send the news articles as a list
+          limitedArticles.forEach((article) => {
+            ctx.replyWithHTML(
+              `<b>${article.title}</b>\n${article.description}\n<a href="${article.url}">Read more</a>`,
+              { disable_web_page_preview: true }
+            );
+          });
+        } catch (error) {
+          ctx.reply("Error retrieving news. Please try again later.");
+        }
+      }
+
+      if (command === "/convert") {
+        const message = ctx.message.text;
+        const [, amountStr, baseCurrency, , targetCurrency] =
+          message.split(" ");
+
+        // Validate input
+        if (!amountStr || !baseCurrency || !targetCurrency) {
+          ctx.reply(
+            "Invalid command format. Please use /convert [amount] [base_currency] to [target_currency]"
+          );
+          return;
+        }
+
+        const amount = parseFloat(amountStr);
+
+        if (isNaN(amount) || amount <= 0) {
+          ctx.reply("Invalid amount. Please provide a valid numeric value.");
+          return;
+        }
+
+        try {
+          const response = await axios.get(
+            `https://api.coingecko.com/api/v3/simple/price?ids=${baseCurrency}&vs_currencies=${targetCurrency}`
+          );
+
+          const targetPrice = response.data[baseCurrency][targetCurrency];
+          const convertedAmount = amount * targetPrice;
+
+          ctx.reply(
+            `${amount} ${baseCurrency} is approximately ${convertedAmount} ${targetCurrency}`
+          );
+        } catch (error) {
+          ctx.reply(
+            "Error converting currencies. Please check the provided currencies and try again."
+          );
+        }
+      }
+
       if (command === "/rates") {
         const args = ctx.message.text.split(" ");
 
@@ -739,33 +879,6 @@ bot.on("message", async (ctx) => {
           ctx.reply("An error occurred while fetching the exchange rate.");
         }
       }
-
-      if (command === "/terms") {
-        // Provide definitions of common trading terms
-        const terms = `
-          Common trading terms:
-          - Bullish: When the market is expected to rise in price
-          - Bearish: When the market is expected to fall in price
-          - Long: When a trader buys a security with the expectation that it will rise in price
-          - Short: When a trader sells a security with the expectation that it will fall in price
-          - Stop loss: An order to sell a security at a specific price in order to limit losses
-          - Take profit: An order to sell a security at a specific price in order to lock in profits
-          - Resistance: A price level at which a security has difficulty breaking above
-          - Support: A price level at which a security has difficulty breaking below
-        `;
-        ctx.reply(terms);
-      }
-
-      if (command === "/theory") {
-        // Provide a brief overview of trading theory
-        const theory = `
-          Trading theory is the study of market behavior and price movement in order to make informed trading decisions. 
-          The goal of trading is to buy low and sell high, but there are many factors that can influence market prices. 
-          Successful traders use technical analysis, fundamental analysis, and risk management strategies to maximize profits and minimize losses.
-        `;
-        ctx.reply(theory);
-      }
-
       if (command === "/mostsearched") {
         try {
           const trendingCoinsResponse = await axios.get(
