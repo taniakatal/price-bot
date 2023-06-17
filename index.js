@@ -131,61 +131,18 @@ function checkCrossover() {
 // Schedule crossover check every hour
 setInterval(checkCrossover, 3600000); // 1 hour = 3600000 milliseconds
 
-// bot.use(async (ctx, next) => {
-//   try {
-//     const { text } = ctx.message;
-//     const isCommand = text.startsWith("/"); // Check if the message starts with "/"
-
-//     if (!isCommand) {
-//       const isHandledStatement = handleIfStatements(ctx, text); // Assuming handleIfStatements returns a boolean
-
-//       if (!isHandledStatement) {
-//         ctx.reply("Sorry, I didn't understand that. Could you please rephrase your message?");
-//         return; // Stop further processing of the message
-//       }
-//     }
-
-//     await next(); // Continue processing the message
-//   } catch (error) {
-//     console.error("Error handling message:", error);
-//     ctx.reply("Oops! Something went wrong. Please try again later.");
-//   }
-// });
-
-cron.schedule("*/5 * * * *", async () => {
-  try {
-    // Calculate the number of minutes since the last history clear
-    const lastClearDate = getLastClearDate(); // Replace this with your own logic to retrieve the last clear date
-    const currentDate = new Date();
-    const minutesSinceLastClear = Math.floor(
-      (currentDate - lastClearDate) / (1000 * 60)
-    );
-
-    // Define the threshold for clearing history (e.g., 5 minutes)
-    const historyClearThreshold = 5;
-
-    if (minutesSinceLastClear > historyClearThreshold) {
-      // Clear the history by deleting all records from the History collection
-      await History.deleteMany({});
-
-      // Update the lastClearDate variable to the current date
-      updateLastClearDate(currentDate); // Replace this with your own logic to update the last clear date
-
-      console.log("History cleared successfully.");
-    }
-  } catch (error) {
-    console.error("Error clearing history:", error);
-  }
-});
-
 bot.use((ctx, next) => {
   // Get the chat ID, user ID, and command name
   const chatId = ctx.chat.id;
-  const command = ctx.message.text.split(" ")[0]; // Get the first word of the message as the command name
+  const message = ctx.message.text;
 
-  // Save the history to MongoDB
-  const newHistory = new History({ chatId, command });
-  newHistory.save().catch((err) => console.log(err));
+  if (message.startsWith("/")) {
+    const command = message.split(" ")[0]; // Get the first word of the message starting with "/"
+
+    // Save the history to MongoDB
+    const newHistory = new History({ chatId, command });
+    newHistory.save().catch((err) => console.log(err));
+  }
 
   // Call the next middleware function or command handler
   return next();
@@ -239,17 +196,10 @@ bot.on("message", async (ctx) => {
 
     handleIfStatements(ctx, text);
 
-
     if (text.startsWith("/")) {
       const [command, ...args] = text.split(" ");
 
       if (command === "/start") {
-        // const { first_name: firstName, last_name: lastName } = ctx.from;
-        // const user = new User({ chatId: ctx.chat.id, firstName, lastName });
-        // await user.save();
-
-        // const welcomeMessage = `Hello ${from.first_name}!`;
-        // ctx.reply(welcomeMessage);
         const { id, first_name, last_name, username } = ctx.from;
         const existingUser = await User.findOne({ chatId: id });
 
@@ -269,7 +219,7 @@ bot.on("message", async (ctx) => {
 
       if (command === "/help") {
         const helpMessage = `
-          Hello! I am taniapricebot Bot. Here are some commands you can use:
+          Hello! I am  CoinTeller Bot. Here are some commands you can use:
       
           Available commands:
           /price - Get the current price of a cryptocurrency.
