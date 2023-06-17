@@ -1,7 +1,6 @@
 const axios = require("axios");
 const { ChartJSNodeCanvas } = require("chartjs-node-canvas");
 const canvas = new ChartJSNodeCanvas({ width: 1000, height: 1000 });
-// const ta = require("ta-lib");
 
 async function fetchTopLosersAndGainers() {
   try {
@@ -34,26 +33,27 @@ async function fetchTopLosersAndGainers() {
   }
 }
 
-
 function calculateSMA(data, period) {
   const closePrices = data.map((item) => item[4]); // Assuming the closing price is at index 4
 
   if (closePrices.length < period) {
-    throw new Error("Insufficient data to calculate the Simple Moving Average.");
+    throw new Error(
+      "Insufficient data to calculate the Simple Moving Average."
+    );
   }
 
   const sma = [];
 
   for (let i = period - 1; i < closePrices.length; i++) {
-    const sum = closePrices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
+    const sum = closePrices
+      .slice(i - period + 1, i + 1)
+      .reduce((a, b) => a + b, 0);
     const average = sum / period;
     sma.push(average);
   }
 
   return sma;
 }
-
-
 
 async function getExchangeRate(baseCurrency, targetCurrency) {
   try {
