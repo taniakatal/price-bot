@@ -1,6 +1,10 @@
 require("dotenv").config();
+
+const cron = require("node-cron");
+
 const axios = require("axios");
-// const ta = require("ta-lib");
+
+const { Telegraf, Markup } = require("telegraf");
 
 const { handleIfStatements } = require("./modules/statement");
 
@@ -15,141 +19,20 @@ module.exports = {
   fetchPublicTreasuryInfo,
 } = require("./modules/price");
 
-const { Telegraf } = require("telegraf");
-const { Markup } = require("telegraf");
-
-const mongoose = require("mongoose");
+module.exports = {
+  Feedback,
+  History,
+  User,
+  Crypto,
+  Crossover,
+  Alert,
+} = require("./modules/Schemas");
 
 const bot = new Telegraf(process.env.TELEGRAM_BOT_API);
+
 let cryptoSymbol = "bitcoin";
 let userChatId = null;
 let agentChatId = null;
-
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
-
-const feedbackSchema = new mongoose.Schema({
-  chatId: {
-    type: Number,
-    required: true,
-    unique: true,
-  },
-  feedback: {
-    type: String,
-    required: true,
-    minlength: 10,
-    maxlength: 200,
-  },
-  timestamp: {
-    type: Date,
-    default: Date.now,
-  },
-});
-
-const Feedback = mongoose.model("Feedback", feedbackSchema);
-
-const historySchema = new mongoose.Schema({
-  chatId: {
-    type: Number,
-    required: true,
-    unique: true,
-  },
-  command: {
-    type: String,
-    required: true,
-  },
-  timestamp: {
-    type: Date,
-    default: Date.now,
-  },
-});
-
-const History = mongoose.model("History", historySchema);
-
-const userSchema = new mongoose.Schema({
-  chatId: {
-    type: String,
-    required: true,
-    unique: true,
-  },
-  firstName: {
-    type: String,
-    required: true,
-    trim: true,
-    minlength: 2,
-    maxlength: 50,
-  },
-  lastName: {
-    type: String,
-    required: true,
-    trim: true,
-    minlength: 2,
-    maxlength: 50,
-  },
-  timestamp: {
-    type: Date,
-    default: Date.now,
-    required: true,
-  },
-});
-
-const User = mongoose.model("User", userSchema);
-
-const cryptoSchema = new mongoose.Schema({
-  chatId: {
-    type: String,
-    required: true,
-    unique: true,
-  },
-  cryptoSymbol: {
-    type: String,
-    required: true,
-  },
-  price: {
-    type: Number,
-    required: true,
-    min: 0,
-  },
-  timestamp: {
-    type: Date,
-    default: Date.now,
-    required: true,
-  },
-});
-
-const Crypto = mongoose.model("Crypto", cryptoSchema);
-
-const crossoverSchema = new mongoose.Schema({
-  cryptocurrency: String,
-  type: String,
-  chatId: Number,
-});
-const Crossover = mongoose.model("Crossover", crossoverSchema);
-
-const alertSchema = new mongoose.Schema({
-  symbol: {
-    type: String,
-    required: true,
-  },
-  price: {
-    type: Number,
-    required: true,
-    min: 0,
-  },
-  type: {
-    type: String,
-    enum: ["above", "below"],
-    required: true,
-  },
-  chatId: {
-    type: Number,
-    required: true,
-  },
-});
-
-const Alert = mongoose.model("Alert", alertSchema);
 
 async function checkAlerts() {
   const symbols = await Alert.distinct("symbol");
@@ -248,6 +131,53 @@ function checkCrossover() {
 // Schedule crossover check every hour
 setInterval(checkCrossover, 3600000); // 1 hour = 3600000 milliseconds
 
+// bot.use(async (ctx, next) => {
+//   try {
+//     const { text } = ctx.message;
+//     const isCommand = text.startsWith("/"); // Check if the message starts with "/"
+
+//     if (!isCommand) {
+//       const isHandledStatement = handleIfStatements(ctx, text); // Assuming handleIfStatements returns a boolean
+
+//       if (!isHandledStatement) {
+//         ctx.reply("Sorry, I didn't understand that. Could you please rephrase your message?");
+//         return; // Stop further processing of the message
+//       }
+//     }
+
+//     await next(); // Continue processing the message
+//   } catch (error) {
+//     console.error("Error handling message:", error);
+//     ctx.reply("Oops! Something went wrong. Please try again later.");
+//   }
+// });
+
+cron.schedule("*/5 * * * *", async () => {
+  try {
+    // Calculate the number of minutes since the last history clear
+    const lastClearDate = getLastClearDate(); // Replace this with your own logic to retrieve the last clear date
+    const currentDate = new Date();
+    const minutesSinceLastClear = Math.floor(
+      (currentDate - lastClearDate) / (1000 * 60)
+    );
+
+    // Define the threshold for clearing history (e.g., 5 minutes)
+    const historyClearThreshold = 5;
+
+    if (minutesSinceLastClear > historyClearThreshold) {
+      // Clear the history by deleting all records from the History collection
+      await History.deleteMany({});
+
+      // Update the lastClearDate variable to the current date
+      updateLastClearDate(currentDate); // Replace this with your own logic to update the last clear date
+
+      console.log("History cleared successfully.");
+    }
+  } catch (error) {
+    console.error("Error clearing history:", error);
+  }
+});
+
 bot.use((ctx, next) => {
   // Get the chat ID, user ID, and command name
   const chatId = ctx.chat.id;
@@ -256,6 +186,44 @@ bot.use((ctx, next) => {
   // Save the history to MongoDB
   const newHistory = new History({ chatId, command });
   newHistory.save().catch((err) => console.log(err));
+
+  // Call the next middleware function or command handler
+  return next();
+});
+
+bot.use((ctx, next) => {
+  const { message } = ctx;
+  if (message && message.text && message.text.startsWith("/")) {
+    const command = message.text.split(" ")[0].toLowerCase();
+    const recognizedCommands = [
+      "/start",
+      "/price",
+      "/trending",
+      "/pricechange",
+      "/chart",
+      "/prediction",
+      "/addalertforcrossover",
+      "/removealertforcrossover",
+      "/listalertforcrossover",
+      "/sentiment",
+      "/fetchTop",
+      "/cryptomarketdata",
+      "/alert",
+      "/viewalert",
+      "/cancelalert",
+      "/moonshot",
+      "/whalewatch",
+      "/feedback",
+      "/handoff",
+      "/mostsearched",
+      "/convert",
+      "/exchangeRate",
+    ];
+
+    if (!recognizedCommands.includes(command)) {
+      ctx.reply("Unrecognized command. Say what?");
+    }
+  }
 
   // Call the next middleware function or command handler
   return next();
@@ -271,16 +239,32 @@ bot.on("message", async (ctx) => {
 
     handleIfStatements(ctx, text);
 
+
     if (text.startsWith("/")) {
       const [command, ...args] = text.split(" ");
 
       if (command === "/start") {
-        const { first_name: firstName, last_name: lastName } = ctx.from;
-        const user = new User({ chatId: ctx.chat.id, firstName, lastName });
-        await user.save();
+        // const { first_name: firstName, last_name: lastName } = ctx.from;
+        // const user = new User({ chatId: ctx.chat.id, firstName, lastName });
+        // await user.save();
 
-        const welcomeMessage = `Hello ${from.first_name}!`;
-        ctx.reply(welcomeMessage);
+        // const welcomeMessage = `Hello ${from.first_name}!`;
+        // ctx.reply(welcomeMessage);
+        const { id, first_name, last_name, username } = ctx.from;
+        const existingUser = await User.findOne({ chatId: id });
+
+        if (!existingUser) {
+          const newUser = new User({
+            chatId: id.toString(),
+            firstName: first_name,
+            lastName: last_name,
+            timestamp: new Date(),
+          });
+
+          await newUser.save();
+        }
+
+        ctx.reply(`Hello, ${first_name}! Welcome to the bot.`);
       }
 
       if (command === "/help") {
@@ -288,20 +272,27 @@ bot.on("message", async (ctx) => {
           Hello! I am taniapricebot Bot. Here are some commands you can use:
       
           Available commands:
-    - /price [symbol]: Get the current price of a cryptocurrency.
-    - /pricechange [symbol]: Get the price change of a cryptocurrency.
-    - /chart [symbol]: Get a chart of the price history for a cryptocurrency.
-    - /fetchTop: Fetch the top gainers and top losers in the market.
-    - /alert [symbol] [price] [above/below]: Set a price alert for a cryptocurrency.
-    - /viewalerts: View your active price alerts.
-    - /cancelalert [alertId]: Cancel a price alert.
-    - /feedback [message]: Provide feedback to the bot.
-    - /terms: Get definitions of common trading terms.
-    - /theory: Get a brief overview of trading theory.
-    - /trending: Get a list of trending cryptocurrencies.
-  
-
-          /calculate <expression> - Calculate a mathematical expression (e.g. /calculate 2 + 3)
+          /price - Get the current price of a cryptocurrency.
+          /pricechange - Get the price change of a cryptocurrency in the last 24 hours.
+          /chart - Get the price chart of a cryptocurrency.
+          /prediction - Get a price prediction for a cryptocurrency.
+          /addalertforcrossover - Add a price alert for a cryptocurrency crossover.
+          /removealertforcrossover - Remove a price alert for a cryptocurrency crossover.
+          /listalertforcrossover - List all price alerts for cryptocurrency crossovers.
+          /sentiment - Get the sentiment analysis of a cryptocurrency.
+          /fetchTop - Fetch the top cryptocurrencies based on market capitalization.
+          /cryptomarketdata - Get market data for a cryptocurrency.
+          /alert - Set a price alert for a cryptocurrency.
+          /viewalerts - View all active price alerts.
+          /cancelalert - Cancel an active price alert.
+          /moonshot - Discover potential moonshot cryptocurrencies.
+          /whalewatch - Monitor whale activities in the cryptocurrency market.
+          /feedback - Provide feedback about the bot.
+          /handoff - Request human assistance.
+          /trending - Get a list of trending coins.
+          /mostsearched - Get a list of most searched coins.
+          /convert - Convert between different currencies.
+          /exchangeRate - Get the exchange rate between two currencies.
       
           You can also ask me questions like:
           - "How are you?"
@@ -311,8 +302,13 @@ bot.on("message", async (ctx) => {
           - "How do I get started with trading?"
           - "What is technical analysis?"
           - "What is fundamental analysis?"
+          -"Tell me a joke" or requests for something funny
+          -"Calculate [mathematical expression]": The bot will evaluate the given mathematical expression and provide the result.
+          - You can also use emojis, and the bot will respond with appropriate reactions.
       
-          Note: Some commands may require additional arguments. Please follow the examples provided.
+      
+      
+          Note: Some commands may require additional arguments. 
         `;
         ctx.reply(helpMessage);
       }
@@ -690,12 +686,12 @@ bot.on("message", async (ctx) => {
 
           // Prepare the response message
           const message = `
-    Moonshot Coin:
-    Name: ${coinInfo.name}
-    Symbol: ${coinInfo.symbol}
-    Price: ${coinInfo.market_data.current_price.usd} USD
-    Market Cap Rank: ${coinInfo.market_cap_rank}
-    Website: ${coinInfo.links.homepage[0]}
+            Moonshot Coin:
+            Name: ${coinInfo.name}
+            Symbol: ${coinInfo.symbol}
+            Price: ${coinInfo.market_data.current_price.usd} USD
+            Market Cap Rank: ${coinInfo.market_cap_rank}
+            Website: ${coinInfo.links.homepage[0]}
         `;
 
           // Send the response to the user
@@ -791,7 +787,7 @@ bot.on("message", async (ctx) => {
         console.log(logMessage);
 
         const inlineKeyboard = Markup.inlineKeyboard([
-          Markup.button.url("Return to Bot", "https://t.me/taniapricebot"),
+          Markup.button.url("Return to Bot", "https://t.me/CoinTellerbot"),
         ]);
         ctx.reply("You have been connected to a human agent.", inlineKeyboard);
       }
@@ -858,12 +854,12 @@ bot.on("message", async (ctx) => {
         }
       }
 
-      if (command === "/rates") {
+      if (command === "/exchangerate") {
         const args = ctx.message.text.split(" ");
 
         if (args.length !== 3) {
           ctx.reply(
-            "Please use the following format: /rate <base_currency> <target_currency>"
+            "Please use the following format: /exchangerate <base_currency> <target_currency>"
           );
           return;
         }
@@ -940,6 +936,7 @@ bot.on("message", async (ctx) => {
     }
   } catch (error) {
     console.log(error);
+    ctx.reply("Oops! Something went wrong. Please try again later.");
   }
 });
 

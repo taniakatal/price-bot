@@ -22,7 +22,7 @@ module.exports = {
       text.includes("who is this") ||
       text.includes("what should I call you")
     ) {
-      ctx.reply(`My name is taniapricebot Bot! How can I help you today?`);
+      ctx.reply(`My name is CoinTellerbot Bot! How can I help you today?`);
     } else if (
       text.includes("thank you") ||
       text.includes("thanks") ||

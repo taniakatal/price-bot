@@ -162,21 +162,7 @@ async function fetchPublicTreasuryInfo(coinId) {
     return null;
   }
 }
-exports.fetchPublicTreasuryInfo = fetchPublicTreasuryInfo;
 
-// exports.getTrendingcrypto = getTrendingcrypto;
-
-// exports.getCryptocurrencyInfo = getCryptocurrencyInfo;
-
-// exports.generateCryptoChart = generateCryptoChart;
-
-// exports.getPrice = getPrice;
-
-// exports.calculateSMA= calculateSMA;
-
-// exports.getExchangeRate = getExchangeRate;
-
-// exports.fetchTopLosersAndGainers = fetchTopLosersAndGainers;
 module.exports = {
   fetchTopLosersAndGainers,
   calculateSMA,
