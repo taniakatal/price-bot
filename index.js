@@ -1,12 +1,12 @@
 require("dotenv").config();
 
-const cron = require("node-cron");
-
 const axios = require("axios");
 
 const { Telegraf, Markup } = require("telegraf");
 
 const { handleIfStatements } = require("./modules/statement");
+
+const { checkAlerts, checkCrossover } = require("./modules/alertfn");
 
 module.exports = {
   fetchTopLosersAndGainers,
@@ -34,102 +34,10 @@ let cryptoSymbol = "bitcoin";
 let userChatId = null;
 let agentChatId = null;
 
-async function checkAlerts() {
-  const symbols = await Alert.distinct("symbol");
-
-  for (const symbol of symbols) {
-    const currentPrice = await getPrice(symbol);
-    const alertsAbove = await Alert.find({
-      symbol,
-      type: "above",
-      price: { $lte: currentPrice },
-    });
-    const alertsBelow = await Alert.find({
-      symbol,
-      type: "below",
-      price: { $gte: currentPrice },
-    });
-
-    for (const alert of [...alertsAbove, ...alertsBelow]) {
-      const typeText =
-        alert.type === "above" ? "reached or exceeded" : "fell or reached";
-      bot.telegram.sendMessage(
-        alert.chatId,
-        `🚨 ${symbol.toUpperCase()} ${typeText} your price alert of $${
-          alert.price
-        } USD. Current price: $${currentPrice} USD`
-      );
-      await Alert.deleteOne({ _id: alert._id });
-    }
-  }
-}
-
 setInterval(checkAlerts, 60000);
 
-function checkCrossover() {
-  const smaPeriod = 5; // Number of days to calculate the SMA
-  const lastPeriod = 7; // Number of days to base the prediction on
-
-  Crossover.find({}, (err, crossovers) => {
-    if (err) {
-      console.error("Error retrieving crossovers:", err);
-      return;
-    }
-
-    crossovers.forEach((crossover) => {
-      const { cryptocurrency, type, chatId } = crossover;
-
-      axios
-        .get(
-          `https://api.coingecko.com/api/v3/coins/${cryptocurrency}/market_chart?vs_currency=usd&days=${
-            smaPeriod + lastPeriod
-          }`
-        )
-        .then((response) => {
-          const prices = response.data?.prices;
-
-          if (!prices || prices.length < smaPeriod + lastPeriod) {
-            console.log(`Insufficient price data for ${cryptocurrency}`);
-            return;
-          }
-
-          const closePrices = prices.map((item) => item[1]); // Assuming the price is at index 1
-
-          const sma = [];
-          for (let i = smaPeriod - 1; i < closePrices.length; i++) {
-            const sum = closePrices
-              .slice(i - smaPeriod + 1, i + 1)
-              .reduce((a, b) => a + b, 0);
-            const average = sum / smaPeriod;
-            sma.push(average);
-          }
-
-          const lastSma = sma[sma.length - 1];
-          const prevSma = sma[sma.length - 2];
-
-          if (prevSma && lastSma) {
-            const crossover = prevSma < lastSma; // Assuming bullish crossover (previous SMA < last SMA)
-
-            if (crossover) {
-              const alertType = type === "buy" ? "BUY" : "SELL";
-              const message = `⚠️ Crossover Alert ⚠️\n\n${alertType} ${cryptocurrency.toUpperCase()}`;
-
-              bot.telegram.sendMessage(chatId, message);
-            }
-          }
-        })
-        .catch((error) => {
-          console.error(
-            `Error fetching price data for ${cryptocurrency}:`,
-            error
-          );
-        });
-    });
-  });
-}
-
-// Schedule crossover check every hour
-setInterval(checkCrossover, 3600000); // 1 hour = 3600000 milliseconds
+// Schedule crossover check every  half hour
+setInterval(checkCrossover, 1800000); //30 mins
 
 bot.use((ctx, next) => {
   // Get the chat ID, user ID, and command name
@@ -154,10 +62,12 @@ bot.use((ctx, next) => {
     const command = message.text.split(" ")[0].toLowerCase();
     const recognizedCommands = [
       "/start",
+      "/help",
       "/price",
       "/trending",
       "/pricechange",
       "/chart",
+      "/fetchTop",
       "/prediction",
       "/addalertforcrossover",
       "/removealertforcrossover",
@@ -174,7 +84,8 @@ bot.use((ctx, next) => {
       "/handoff",
       "/mostsearched",
       "/convert",
-      "/exchangeRate",
+      "/exchangerate",
+      "/news",
     ];
 
     if (!recognizedCommands.includes(command)) {
@@ -242,8 +153,8 @@ bot.on("message", async (ctx) => {
           /trending - Get a list of trending coins.
           /mostsearched - Get a list of most searched coins.
           /convert - Convert between different currencies.
-          /exchangeRate - Get the exchange rate between two currencies.
-      
+          /exchangerate - Get the exchange rate between two currencies.
+          /news- financial news
           You can also ask me questions like:
           - "How are you?"
           - "What is your name?"
@@ -289,7 +200,7 @@ bot.on("message", async (ctx) => {
 
         if (!cryptoSymbol) {
           ctx.reply(
-            "Please specify a cryptocurrency symbol. Example usage: /pricechange BTC"
+            "Please specify a cryptocurrency symbol. Example usage: /pricechange bitcoin"
           );
           return;
         }
@@ -385,7 +296,7 @@ bot.on("message", async (ctx) => {
       }
 
       if (command === "/addalertforcrossover") {
-        const [command, cryptocurrency, type] = ctx.message.text.split(" ");
+        const [_, cryptocurrency, type] = ctx.message.text.split(" ");
 
         if (!cryptocurrency || !type) {
           ctx.reply(
@@ -415,7 +326,7 @@ bot.on("message", async (ctx) => {
 
       // Remove command
       if (command === "/removealertforcrossover") {
-        const [command, cryptocurrency, type] = ctx.message.text.split(" ");
+        const [_, cryptocurrency, type] = ctx.message.text.split(" ");
 
         if (!cryptocurrency || !type) {
           ctx.reply(
@@ -520,7 +431,7 @@ bot.on("message", async (ctx) => {
 
         if (!coinId) {
           ctx.reply(
-            "Please provide a valid cryptocurrency coin ID. Usage: /cryptomarketdata [COIN_ID]"
+            "Please provide a valid cryptocurrency coin ID. Usage: /cryptomarketdata CryptocurrencySymbol"
           );
           return;
         }
@@ -609,12 +520,22 @@ bot.on("message", async (ctx) => {
           ctx.reply("Please use the following format: /cancelalert ALERT_ID");
         }
       }
+
       if (command === "/moonshot") {
         try {
           // Fetch the top low-cap cryptocurrencies with significant price increase
           const response = await axios.get(
             "https://api.coingecko.com/api/v3/search/trending"
           );
+
+          if (
+            !response.data ||
+            !response.data.coins ||
+            response.data.coins.length === 0
+          ) {
+            throw new Error("Invalid or empty API response");
+          }
+
           const trendingCoins = response.data.coins;
 
           // Filter out the low-cap cryptocurrencies
@@ -623,6 +544,10 @@ bot.on("message", async (ctx) => {
               coin.item.market_cap_rank > 100 &&
               coin.item.market_cap_rank <= 500
           );
+
+          if (lowCapCoins.length === 0) {
+            throw new Error("No low-cap coins found");
+          }
 
           // Randomly select a coin from the low-cap list
           const randomIndex = Math.floor(Math.random() * lowCapCoins.length);
@@ -642,13 +567,17 @@ bot.on("message", async (ctx) => {
             Price: ${coinInfo.market_data.current_price.usd} USD
             Market Cap Rank: ${coinInfo.market_cap_rank}
             Website: ${coinInfo.links.homepage[0]}
-        `;
+          `;
 
           // Send the response to the user
           ctx.reply(message);
         } catch (error) {
-          console.error("Error fetching moonshot coin:", error);
-          ctx.reply("Failed to fetch moonshot coin. Please try again later.");
+          if (error.message === "No low-cap coins found") {
+            ctx.reply("No low-cap coins found. Please try again later.");
+          } else {
+            console.error("Error fetching moonshot coin:", error);
+            ctx.reply("Failed to fetch moonshot coin. Please try again later.");
+          }
         }
       }
 
@@ -693,10 +622,18 @@ bot.on("message", async (ctx) => {
           );
         }
       }
+
       if (command === "/feedback") {
         // Get the chat ID and feedback message
         const chatId = ctx.chat.id;
         const feedback = ctx.message.text.substring(9).trim(); // Remove the '/feedback' command from the message
+
+        if (feedback === "") {
+          ctx.reply(
+            "Please provide your feedback after the command. Example: /feedback Your feedback goes here"
+          );
+          return; // Stop further execution
+        }
 
         // Save the feedback to MongoDB
         const newFeedback = new Feedback({ chatId, feedback });
@@ -744,25 +681,26 @@ bot.on("message", async (ctx) => {
 
       if (command === "/news") {
         try {
-          // Fetch the latest cryptocurrency news articles from CoinGecko's news API
           const response = await axios.get(
             "https://api.coingecko.com/api/v3/news"
           );
-          const articles = response.data;
+          const newsArticles = response.data.articles;
 
-          // Limit the number of articles to display
-          const maxArticles = 5;
-          const limitedArticles = articles.slice(0, maxArticles);
-
-          // Send the news articles as a list
-          limitedArticles.forEach((article) => {
-            ctx.replyWithHTML(
-              `<b>${article.title}</b>\n${article.description}\n<a href="${article.url}">Read more</a>`,
-              { disable_web_page_preview: true }
-            );
-          });
+          if (Array.isArray(newsArticles) && newsArticles.length > 0) {
+            // Send the news articles to the user
+            newsArticles.forEach((article) => {
+              ctx.replyWithHTML(
+                `<b>${article.title}</b>\n\n${article.description}\n<a href="${article.url}">Read more</a>\n`
+              );
+            });
+          } else {
+            ctx.reply("No news articles found.");
+          }
         } catch (error) {
-          ctx.reply("Error retrieving news. Please try again later.");
+          console.error("Error fetching news:", error);
+          ctx.reply(
+            "An error occurred while fetching the news. Please try again later."
+          );
         }
       }
 
