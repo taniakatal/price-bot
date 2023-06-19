@@ -28,7 +28,7 @@ module.exports = {
   Alert,
 } = require("./modules/Schemas");
 
-const bot = new Telegraf(process.env.TELEGRAM_BOT_API);
+const bot = new Telegraf(process.env.TELEGRAMBOTAPI);
 
 let cryptoSymbol = "bitcoin";
 let userChatId = null;
