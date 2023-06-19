@@ -106,7 +106,6 @@ const crossoverSchema = new mongoose.Schema({
   type: {
     type: String,
     required: true,
-    enum: ["Buy", "Sell"],
   },
   chatId: {
     type: Number,

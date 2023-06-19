@@ -55,6 +55,8 @@ function calculateSMA(data, period) {
   return sma;
 }
 
+
+
 async function getExchangeRate(baseCurrency, targetCurrency) {
   try {
     const response = await axios.get(
