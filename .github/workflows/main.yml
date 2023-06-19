@@ -24,6 +24,7 @@ jobs:
         env:
           TELEGRAM_BOT_API: ${{ secrets.TELEGRAMBOTAPI }}
         run: |
+          echo ${{ secrets.TELEGRAMBOTAPI }}
           npm start
 
       - name: Stop bot
