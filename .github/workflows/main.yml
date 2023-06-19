@@ -22,7 +22,7 @@ jobs:
 
       - name: Run bot
         env:
-          TELEGRAM_BOT_API: ${{ secrets.TELEGRAM_BOT_API }}
+          TELEGRAM_BOT_API: ${{ secrets.TELEGRAMBOTAPI }}
         run: |
           npm start
 
