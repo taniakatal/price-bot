@@ -1,0 +1,31 @@
+name: Telegram Bot
+
+on:
+  schedule:
+    - cron: "*/70 * * * *"
+
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: "14"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run bot
+        env:
+          TELEGRAM_BOT_API: ${{ secrets.TELEGRAM_BOT_API }}
+        run: |
+          npm start
+
+      - name: Stop bot
+        run: |
+          sleep 60m
