@@ -55,7 +55,31 @@ function calculateSMA(data, period) {
   return sma;
 }
 
+async function fetchMarketData() {
+  try {
+    const response = await axios.get("https://api.coingecko.com/api/v3/global");
+    const marketData = response.data.data.market_cap_percentage;
+    const bitcoinDominance = marketData.btc;
 
+    return bitcoinDominance;
+  } catch (error) {
+    console.error("Error fetching market data:", error);
+    throw error;
+  }
+}
+function determineSentiment(bitcoinDominance) {
+  let sentimentText;
+
+  if (bitcoinDominance > 50) {
+    sentimentText = "The market sentiment is bullish 🐮";
+  } else if (bitcoinDominance < 50) {
+    sentimentText = "The market sentiment is bearish 🐻";
+  } else {
+    sentimentText = "The market sentiment is neutral 😐";
+  }
+
+  return sentimentText;
+}
 
 async function getExchangeRate(baseCurrency, targetCurrency) {
   try {
@@ -173,5 +197,8 @@ module.exports = {
   generateCryptoChart,
   getCryptocurrencyInfo,
   getTrendingcrypto,
+  fetchMarketData,
+  determineSentiment,
+
   fetchPublicTreasuryInfo,
 };

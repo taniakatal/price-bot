@@ -11,10 +11,10 @@ module.exports = {
       text.includes("how is it going") ||
       text.includes("how are you today") ||
       text.includes("how have you been") ||
-      text.includes("how's your day") ||
-      text.includes("how are things")
+      text.includes("how's your day") 
+     
     ) {
-      ctx.reply(`I'm doing great, thank you! How can I assist you?`);
+      ctx.reply(`I am good `);
     } else if (
       text.includes("what is your name") ||
       text.includes("your name") ||

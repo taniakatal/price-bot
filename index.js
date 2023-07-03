@@ -17,6 +17,8 @@ module.exports = {
   getCryptocurrencyInfo,
   getTrendingcrypto,
   fetchPublicTreasuryInfo,
+  fetchMarketData,
+  determineSentiment,
 } = require("./modules/price");
 
 module.exports = {
@@ -34,10 +36,11 @@ let cryptoSymbol = "bitcoin";
 let userChatId = null;
 let agentChatId = null;
 
+// Schedule price alert every 60 secound
 setInterval(checkAlerts, 60000);
 
 // Schedule crossover check every  half hour
-setInterval(checkCrossover, 1800000); //30 mins
+setInterval(checkCrossover, 1800000);
 
 bot.use((ctx, next) => {
   // Get the chat ID, user ID, and command name
@@ -76,7 +79,7 @@ bot.use((ctx, next) => {
       "/fetchTop",
       "/cryptomarketdata",
       "/alert",
-      "/viewalert",
+      "/viewalerts",
       "/cancelalert",
       "/moonshot",
       "/whalewatch",
@@ -149,7 +152,6 @@ bot.on("message", async (ctx) => {
           /moonshot - Discover potential moonshot cryptocurrencies.
           /whalewatch - Monitor whale activities in the cryptocurrency market.
           /feedback - Provide feedback about the bot.
-          /handoff - Request human assistance.
           /trending - Get a list of trending coins.
           /mostsearched - Get a list of most searched coins.
           /convert - Convert between different currencies.
@@ -353,16 +355,39 @@ bot.on("message", async (ctx) => {
       }
 
       // List command
+      // if (command === "/listalertforcrossover") {
+      //   try {
+      //     const crossovers = await Crossover.find({
+      //       chatId: ctx.message.chat.id,
+      //     }).exec();
+      //     let crossoverList = "Your crossovers:\n\n";
+      //     crossovers.forEach((crossover) => {
+      //       crossoverList += `- ${crossover.cryptocurrency.toUpperCase()} ${crossover.type.toUpperCase()}\n`;
+      //     });
+      //     ctx.reply(crossoverList);
+      //   } catch (error) {
+      //     console.error("Error retrieving crossovers:", error);
+      //     ctx.reply(
+      //       "Oops! Something went wrong while fetching the crossovers. Please try again."
+      //     );
+      //   }
+      // }
+
       if (command === "/listalertforcrossover") {
         try {
           const crossovers = await Crossover.find({
             chatId: ctx.message.chat.id,
           }).exec();
-          let crossoverList = "Your crossovers:\n\n";
-          crossovers.forEach((crossover) => {
-            crossoverList += `- ${crossover.cryptocurrency.toUpperCase()} ${crossover.type.toUpperCase()}\n`;
-          });
-          ctx.reply(crossoverList);
+      
+          if (crossovers.length === 0) {
+            ctx.reply("You have no crossovers set up.");
+          } else {
+            let crossoverList = "Your crossovers:\n\n";
+            crossovers.forEach((crossover) => {
+              crossoverList += `- ${crossover.cryptocurrency.toUpperCase()} ${crossover.type.toUpperCase()}\n`;
+            });
+            ctx.reply(crossoverList);
+          }
         } catch (error) {
           console.error("Error retrieving crossovers:", error);
           ctx.reply(
@@ -370,27 +395,39 @@ bot.on("message", async (ctx) => {
           );
         }
       }
+      
+      // if (command === "/sentiment") {
+      //   try {
+      //     const response = await axios.get(
+      //       "https://api.coingecko.com/api/v3/global"
+      //     );
+      //     const marketData = response.data.data.market_cap_percentage;
+      //     const bitcoinDominance = marketData.btc;
 
+      //     let sentimentText;
+      //     if (bitcoinDominance > 50) {
+      //       sentimentText = "The market sentiment is bullish 🐮";
+      //     } else if (bitcoinDominance < 50) {
+      //       sentimentText = "The market sentiment is bearish 🐻";
+      //     } else {
+      //       sentimentText = "The market sentiment is neutral 😐";
+      //     }
+
+      //     ctx.reply(sentimentText);
+      //   } catch (error) {
+      //     console.error("Error fetching market sentiment:", error);
+      //     ctx.reply(
+      //       "An error occurred while fetching the market sentiment. Please try again later."
+      //     );
+      //   }
+      // }
       if (command === "/sentiment") {
         try {
-          const response = await axios.get(
-            "https://api.coingecko.com/api/v3/global"
-          );
-          const marketData = response.data.data.market_cap_percentage;
-          const bitcoinDominance = marketData.btc;
-
-          let sentimentText;
-          if (bitcoinDominance > 50) {
-            sentimentText = "The market sentiment is bullish 🐮";
-          } else if (bitcoinDominance < 50) {
-            sentimentText = "The market sentiment is bearish 🐻";
-          } else {
-            sentimentText = "The market sentiment is neutral 😐";
-          }
+          const bitcoinDominance = await fetchMarketData();
+          const sentimentText = determineSentiment(bitcoinDominance);
 
           ctx.reply(sentimentText);
         } catch (error) {
-          console.error("Error fetching market sentiment:", error);
           ctx.reply(
             "An error occurred while fetching the market sentiment. Please try again later."
           );
@@ -623,6 +660,34 @@ bot.on("message", async (ctx) => {
         }
       }
 
+      // if (command === "/feedback") {
+      //   // Get the chat ID and feedback message
+      //   const chatId = ctx.chat.id;
+      //   const feedback = ctx.message.text.substring(9).trim(); // Remove the '/feedback' command from the message
+
+      //   if (feedback === "") {
+      //     ctx.reply(
+      //       "Please provide your feedback after the command. Example: /feedback Your feedback goes here"
+      //     );
+      //     return; // Stop further execution
+      //   }
+
+      //   // Save the feedback to MongoDB
+      //   const newFeedback = new Feedback({ chatId, feedback });
+      //   newFeedback
+      //     .save()
+      //     .then(() => {
+      //       // Reply with a confirmation message
+      //       ctx.reply("Thank you for your feedback!");
+      //     })
+      //     .catch((err) => {
+      //       // Reply with an error message
+      //       ctx.reply(
+      //         "Sorry, there was an error saving your feedback. Please try again later."
+      //       );
+      //       console.log(err);
+      //     });
+      // }
       if (command === "/feedback") {
         // Get the chat ID and feedback message
         const chatId = ctx.chat.id;
@@ -644,11 +709,16 @@ bot.on("message", async (ctx) => {
             ctx.reply("Thank you for your feedback!");
           })
           .catch((err) => {
-            // Reply with an error message
-            ctx.reply(
-              "Sorry, there was an error saving your feedback. Please try again later."
-            );
-            console.log(err);
+            if (err.code === 11000) {
+              // Duplicate key error, handle accordingly
+              ctx.reply("You have already provided feedback. Thank you!");
+            } else {
+              // Reply with an error message
+              ctx.reply(
+                "Sorry, there was an error saving your feedback. Please try again later."
+              );
+              console.log(err);
+            }
           });
       }
 
@@ -679,27 +749,62 @@ bot.on("message", async (ctx) => {
         ctx.reply("You have been connected to a human agent.", inlineKeyboard);
       }
 
+      // if (command === "/news") {
+      //   try {
+      //     const response = await axios.get(
+      //       "https://api.coingecko.com/api/v3/news"
+      //     );
+      //     const newsArticles = response.data.articles;
+
+      //     if (Array.isArray(newsArticles) && newsArticles.length > 0) {
+      //       // Send the news articles to the user
+      //       newsArticles.forEach((article) => {
+      //         ctx.replyWithHTML(
+      //           `<b>${article.title}</b>\n\n${article.description}\n<a href="${article.url}">Read more</a>\n`
+      //         );
+      //       });
+      //     } else {
+      //       ctx.reply("No news articles found.");
+      //     }
+      //   } catch (error) {
+      //     console.error("Error fetching news:", error);
+      //     ctx.reply(
+      //       "An error occurred while fetching the news. Please try again later."
+      //     );
+      //   }
+      // }
+
+      // Command to fetch news
       if (command === "/news") {
         try {
           const response = await axios.get(
-            "https://api.coingecko.com/api/v3/news"
+            `https://api.coingecko.com/api/v3/news`
           );
-          const newsArticles = response.data.articles;
 
-          if (Array.isArray(newsArticles) && newsArticles.length > 0) {
-            // Send the news articles to the user
-            newsArticles.forEach((article) => {
-              ctx.replyWithHTML(
-                `<b>${article.title}</b>\n\n${article.description}\n<a href="${article.url}">Read more</a>\n`
-              );
-            });
+          if (
+            response.status === 200 &&
+            response.data &&
+            response.data.length > 0
+          ) {
+            const newsArticles = response.data;
+            let newsMessage = "📰 Latest news from CoinGecko:\n\n";
+
+            // Add the top 5 news articles to the message
+            for (let i = 0; i < 5; i++) {
+              const article = newsArticles[i];
+              newsMessage += `🔹 ${article.title}\n${article.url}\n\n`;
+            }
+
+            ctx.reply(newsMessage);
           } else {
-            ctx.reply("No news articles found.");
+            ctx.reply(
+              "❌ Unable to fetch news at the moment. Please try again later."
+            );
           }
         } catch (error) {
           console.error("Error fetching news:", error);
           ctx.reply(
-            "An error occurred while fetching the news. Please try again later."
+            "❌ An error occurred while fetching news. Please try again later."
           );
         }
       }

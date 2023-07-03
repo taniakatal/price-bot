@@ -9,13 +9,12 @@ mongoose.connect(process.env.MONGODBURI, {
 const feedbackSchema = new mongoose.Schema({
   chatId: {
     type: Number,
-    required: true,
-    unique: true,
+    required: true, 
   },
   feedback: {
     type: String,
     required: true,
-    minlength: 10,
+    minlength: 3,
     maxlength: 200,
   },
   timestamp: {
